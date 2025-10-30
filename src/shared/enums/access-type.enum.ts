@@ -1,0 +1,5 @@
+export enum AccessType {
+  ALLOWED = 'ALLOWED',
+  TIME_LIMITED = 'TIME_LIMITED',
+  FORBIDDEN = 'FORBIDDEN',
+}
