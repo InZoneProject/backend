@@ -1,5 +1,5 @@
 import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
-import { COLUMN_LENGTHS } from '../constants/column-lengths';
+import { COLUMN_LENGTHS } from '../../../shared/constants/column-lengths';
 
 @Entity()
 export class GlobalAdmin {

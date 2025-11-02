@@ -1,4 +1,5 @@
 import {
+  Column,
   CreateDateColumn,
   Entity,
   JoinColumn,
@@ -14,6 +15,9 @@ export class Door {
   @PrimaryGeneratedColumn()
   door_id: number;
 
+  @Column({ default: false })
+  is_entrance: boolean;
+
   @CreateDateColumn()
   created_at: Date;
 
@@ -25,8 +29,9 @@ export class Door {
 
   @ManyToOne(() => Zone, (zone_from) => zone_from.outgoing_doors, {
     onDelete: 'CASCADE',
+    nullable: true,
   })
-  zone_from: Zone;
+  zone_from: Zone | null;
 
   @ManyToOne(() => Zone, (zone_to) => zone_to.incoming_doors, {
     onDelete: 'CASCADE',

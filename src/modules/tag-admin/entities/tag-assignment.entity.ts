@@ -7,7 +7,7 @@ import {
 } from 'typeorm';
 import { Employee } from '../../employees/entities/employee.entity';
 import { TagAdmin } from './tag-admin.entity';
-import { RfidTag } from './rfid-tag.entity';
+import { RfidTag } from '../../rfid/entities/rfid-tag.entity';
 
 @Entity()
 export class TagAssignment {

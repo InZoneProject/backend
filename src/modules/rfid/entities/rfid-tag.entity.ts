@@ -6,7 +6,7 @@ import {
   OneToMany,
   PrimaryGeneratedColumn,
 } from 'typeorm';
-import { TagAssignment } from './tag-assignment.entity';
+import { TagAssignment } from '../../tag-admin/entities/tag-assignment.entity';
 import { ScanEvent } from './scan-event.entity';
 import { Organization } from '../../organizations/entities/organization.entity';
 

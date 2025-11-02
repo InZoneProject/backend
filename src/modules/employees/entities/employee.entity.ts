@@ -9,7 +9,7 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { Notification } from '../../notifications/entities/notification.entity';
-import { TagAssignment } from '../../rfid/entities/tag-assignment.entity';
+import { TagAssignment } from '../../tag-admin/entities/tag-assignment.entity';
 import { Position } from '../../organizations/entities/position.entity';
 import { Organization } from '../../organizations/entities/organization.entity';
 import { COLUMN_LENGTHS } from '../../../shared/constants/column-lengths';

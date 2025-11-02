@@ -19,7 +19,7 @@ export class OrganizationAdmin {
   @Column({ unique: true, length: COLUMN_LENGTHS.EMAIL })
   email: string;
 
-  @Column({ length: COLUMN_LENGTHS.PASSWORD, nullable: true })
+  @Column({ length: COLUMN_LENGTHS.PASSWORD })
   password: string;
 
   @Column({ length: COLUMN_LENGTHS.PHONE, nullable: true })

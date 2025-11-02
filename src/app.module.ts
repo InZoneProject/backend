@@ -1,13 +1,15 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { AuthModule } from './modules/auth/auth.module';
+import { AuthModule } from './modules/auth';
 import { OrganizationsModule } from './modules/organizations/organizations.module';
 import { EmployeesModule } from './modules/employees/employees.module';
 import { BuildingsModule } from './modules/buildings/buildings.module';
 import { RfidModule } from './modules/rfid/rfid.module';
 import { AccessControlModule } from './modules/access-control/access-control.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { GlobalAdminModule } from './modules/global-admin/global-admin.module';
+import { TagAdminModule } from './modules/tag-admin/tag-admin.module';
 
 @Module({
   imports: [
@@ -37,6 +39,8 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
     RfidModule,
     AccessControlModule,
     NotificationsModule,
+    GlobalAdminModule,
+    TagAdminModule,
   ],
 })
 export class AppModule {}
