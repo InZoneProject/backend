@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  JoinColumn,
   ManyToOne,
   OneToMany,
   PrimaryGeneratedColumn,
@@ -11,6 +12,7 @@ import { Employee } from '../../employees/entities/employee.entity';
 import { RfidTag } from '../../rfid/entities/rfid-tag.entity';
 import { OrganizationAdmin } from './organization-admin.entity';
 import { Building } from '../../buildings/entities/building.entity';
+import { TagAdmin } from '../../tag-admin/entities/tag-admin.entity';
 import { COLUMN_LENGTHS } from '../../../shared/constants/column-lengths';
 
 @Entity()
@@ -53,10 +55,14 @@ export class Organization {
       onDelete: 'CASCADE',
     },
   )
+  @JoinColumn({ name: 'organization_admin_id' })
   organization_admin: OrganizationAdmin;
 
   @OneToMany(() => Building, (building) => building.organization, {
     cascade: true,
   })
   buildings: Building[];
+
+  @OneToMany(() => TagAdmin, (tag_admin) => tag_admin.organization)
+  tag_admins: TagAdmin[];
 }

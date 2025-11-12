@@ -13,7 +13,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { GlobalAdminService } from './global-admin.service';
-import { GLOBAL_ADMIN_CONSTANTS } from './global-admin.constants';
+import { PAGINATION_CONSTANTS } from '../../shared/constants/pagination.constants';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -44,13 +44,13 @@ export class GlobalAdminController {
   async getInviteHistory(
     @Query(
       'offset',
-      new DefaultValuePipe(GLOBAL_ADMIN_CONSTANTS.DEFAULT_PAGINATION_OFFSET),
+      new DefaultValuePipe(PAGINATION_CONSTANTS.DEFAULT_OFFSET),
       ParseIntPipe,
     )
     offset: number,
     @Query(
       'limit',
-      new DefaultValuePipe(GLOBAL_ADMIN_CONSTANTS.DEFAULT_PAGINATION_LIMIT),
+      new DefaultValuePipe(PAGINATION_CONSTANTS.DEFAULT_LIMIT),
       ParseIntPipe,
     )
     limit: number,
@@ -62,13 +62,13 @@ export class GlobalAdminController {
   async getAllOrganizationAdmins(
     @Query(
       'offset',
-      new DefaultValuePipe(GLOBAL_ADMIN_CONSTANTS.DEFAULT_PAGINATION_OFFSET),
+      new DefaultValuePipe(PAGINATION_CONSTANTS.DEFAULT_OFFSET),
       ParseIntPipe,
     )
     offset: number,
     @Query(
       'limit',
-      new DefaultValuePipe(GLOBAL_ADMIN_CONSTANTS.DEFAULT_PAGINATION_LIMIT),
+      new DefaultValuePipe(PAGINATION_CONSTANTS.DEFAULT_LIMIT),
       ParseIntPipe,
     )
     limit: number,

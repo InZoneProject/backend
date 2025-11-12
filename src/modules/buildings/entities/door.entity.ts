@@ -31,10 +31,12 @@ export class Door {
     onDelete: 'CASCADE',
     nullable: true,
   })
+  @JoinColumn({ name: 'zone_from_id' })
   zone_from: Zone | null;
 
   @ManyToOne(() => Zone, (zone_to) => zone_to.incoming_doors, {
     onDelete: 'CASCADE',
   })
+  @JoinColumn({ name: 'zone_to_id' })
   zone_to: Zone;
 }

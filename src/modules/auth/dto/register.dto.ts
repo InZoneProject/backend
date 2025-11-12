@@ -1,12 +1,7 @@
 import { IsEmail, IsNotEmpty, IsString, MinLength } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
-export class RegisterOrganizationAdminRequestDto {
-  @ApiProperty()
-  @IsString()
-  @IsNotEmpty()
-  invite_token: string;
-
+export class RegisterDto {
   @ApiProperty()
   @IsString()
   @IsNotEmpty()

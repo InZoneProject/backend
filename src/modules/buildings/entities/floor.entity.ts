@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  JoinColumn,
   ManyToOne,
   OneToMany,
   PrimaryGeneratedColumn,
@@ -23,6 +24,7 @@ export class Floor {
   @ManyToOne(() => Building, (building) => building.floors, {
     onDelete: 'CASCADE',
   })
+  @JoinColumn({ name: 'building_id' })
   building: Building;
 
   @OneToMany(() => Zone, (zone) => zone.floor, {

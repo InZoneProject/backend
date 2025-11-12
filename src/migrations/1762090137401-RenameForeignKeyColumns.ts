@@ -1,0 +1,126 @@
+import { MigrationInterface, QueryRunner } from "typeorm";
+
+export class RenameForeignKeyColumns1762090137401 implements MigrationInterface {
+    name = 'RenameForeignKeyColumns1762090137401'
+
+    public async up(queryRunner: QueryRunner): Promise<void> {
+        await queryRunner.query(`ALTER TABLE "notification" DROP CONSTRAINT "FK_538c78d8c037855770c0016a2a6"`);
+        await queryRunner.query(`ALTER TABLE "scan_event" DROP CONSTRAINT "FK_bf16cb66edae19dd629de83fa16"`);
+        await queryRunner.query(`ALTER TABLE "scan_event" DROP CONSTRAINT "FK_7f8dc260004b7f79098e04767b1"`);
+        await queryRunner.query(`ALTER TABLE "rfid_tag" DROP CONSTRAINT "FK_99c5e7a0cf89d113b293c292195"`);
+        await queryRunner.query(`ALTER TABLE "door" DROP CONSTRAINT "FK_d697d1b00ded9cb355f427f10ef"`);
+        await queryRunner.query(`ALTER TABLE "door" DROP CONSTRAINT "FK_d3b232ecb258065a35cede91aed"`);
+        await queryRunner.query(`ALTER TABLE "zone" DROP CONSTRAINT "FK_e54e40db7de06711084c3877f2f"`);
+        await queryRunner.query(`ALTER TABLE "zone" DROP CONSTRAINT "FK_076cf2522d43ffaf46810996163"`);
+        await queryRunner.query(`ALTER TABLE "floor" DROP CONSTRAINT "FK_fe5643c4295398f67a56f52b405"`);
+        await queryRunner.query(`ALTER TABLE "building" DROP CONSTRAINT "FK_184998b381f8d2db3f99fde01ab"`);
+        await queryRunner.query(`ALTER TABLE "organization" DROP CONSTRAINT "FK_51f88571a43626038bf348ee4f1"`);
+        await queryRunner.query(`ALTER TABLE "position" DROP CONSTRAINT "FK_1c8c77edbb9538a9ad042e4f4b9"`);
+        await queryRunner.query(`ALTER TABLE "employee" DROP CONSTRAINT "FK_24cef36c983a76c171fd1e70e90"`);
+        await queryRunner.query(`ALTER TABLE "tag_assignment" DROP CONSTRAINT "FK_c772bb5c1a54379162b5be76641"`);
+        await queryRunner.query(`ALTER TABLE "tag_assignment" DROP CONSTRAINT "FK_b1e6ef03ed7d0d2ca2e6b971c8c"`);
+        await queryRunner.query(`ALTER TABLE "tag_assignment" DROP CONSTRAINT "FK_8c3fe1cd7146d06ee1b7199c738"`);
+        await queryRunner.query(`ALTER TABLE "notification" RENAME COLUMN "employeeEmployeeId" TO "employee_id"`);
+        await queryRunner.query(`ALTER TABLE "rfid_tag" RENAME COLUMN "organizationOrganizationId" TO "organization_id"`);
+        await queryRunner.query(`ALTER TABLE "floor" RENAME COLUMN "buildingBuildingId" TO "building_id"`);
+        await queryRunner.query(`ALTER TABLE "building" RENAME COLUMN "organizationOrganizationId" TO "organization_id"`);
+        await queryRunner.query(`ALTER TABLE "organization" RENAME COLUMN "organizationAdminOrganizationAdminId" TO "organization_admin_id"`);
+        await queryRunner.query(`ALTER TABLE "position" RENAME COLUMN "organizationOrganizationId" TO "organization_id"`);
+        await queryRunner.query(`ALTER TABLE "employee" RENAME COLUMN "organizationOrganizationId" TO "organization_id"`);
+        await queryRunner.query(`ALTER TABLE "scan_event" DROP COLUMN "rfidTagRfidTagId"`);
+        await queryRunner.query(`ALTER TABLE "scan_event" DROP COLUMN "rfidReaderRfidReaderId"`);
+        await queryRunner.query(`ALTER TABLE "door" DROP COLUMN "zoneFromZoneId"`);
+        await queryRunner.query(`ALTER TABLE "door" DROP COLUMN "zoneToZoneId"`);
+        await queryRunner.query(`ALTER TABLE "zone" DROP COLUMN "floorFloorId"`);
+        await queryRunner.query(`ALTER TABLE "zone" DROP COLUMN "buildingBuildingId"`);
+        await queryRunner.query(`ALTER TABLE "tag_assignment" DROP COLUMN "employeeEmployeeId"`);
+        await queryRunner.query(`ALTER TABLE "tag_assignment" DROP COLUMN "tagAdminTagAdminId"`);
+        await queryRunner.query(`ALTER TABLE "tag_assignment" DROP COLUMN "rfidTagRfidTagId"`);
+        await queryRunner.query(`ALTER TABLE "scan_event" ADD "rfid_tag_id" integer`);
+        await queryRunner.query(`ALTER TABLE "scan_event" ADD "rfid_reader_id" integer`);
+        await queryRunner.query(`ALTER TABLE "door" ADD "zone_from_id" integer`);
+        await queryRunner.query(`ALTER TABLE "door" ADD "zone_to_id" integer`);
+        await queryRunner.query(`ALTER TABLE "zone" ADD "floor_id" integer`);
+        await queryRunner.query(`ALTER TABLE "zone" ADD "building_id" integer`);
+        await queryRunner.query(`ALTER TABLE "tag_assignment" ADD "employee_id" integer`);
+        await queryRunner.query(`ALTER TABLE "tag_assignment" ADD "tag_admin_id" integer`);
+        await queryRunner.query(`ALTER TABLE "tag_assignment" ADD "rfid_tag_id" integer`);
+        await queryRunner.query(`ALTER TABLE "notification" ADD CONSTRAINT "FK_a0da9b4eb8be55bcb0a8d1b86f3" FOREIGN KEY ("employee_id") REFERENCES "employee"("employee_id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "scan_event" ADD CONSTRAINT "FK_3bf4d3c40f797e9318d3a29fa32" FOREIGN KEY ("rfid_tag_id") REFERENCES "rfid_tag"("rfid_tag_id") ON DELETE SET NULL ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "scan_event" ADD CONSTRAINT "FK_d2f9a9971255457973463fbec8b" FOREIGN KEY ("rfid_reader_id") REFERENCES "rfid_reader"("rfid_reader_id") ON DELETE SET NULL ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "rfid_tag" ADD CONSTRAINT "FK_0666447ae74bebdfe89fcc72099" FOREIGN KEY ("organization_id") REFERENCES "organization"("organization_id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "door" ADD CONSTRAINT "FK_af11e53d2e6a4ec94b3768dbf62" FOREIGN KEY ("zone_from_id") REFERENCES "zone"("zone_id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "door" ADD CONSTRAINT "FK_692c4f814131bb3942be419f54a" FOREIGN KEY ("zone_to_id") REFERENCES "zone"("zone_id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "zone" ADD CONSTRAINT "FK_a62b650f24e35df37a259f91923" FOREIGN KEY ("floor_id") REFERENCES "floor"("floor_id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "zone" ADD CONSTRAINT "FK_c4fac4a1032938134791cbd96fe" FOREIGN KEY ("building_id") REFERENCES "building"("building_id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "floor" ADD CONSTRAINT "FK_1565850c51d1cc30e896101fa77" FOREIGN KEY ("building_id") REFERENCES "building"("building_id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "building" ADD CONSTRAINT "FK_dd709c6c4b2e4d8f199c993aefd" FOREIGN KEY ("organization_id") REFERENCES "organization"("organization_id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "organization" ADD CONSTRAINT "FK_f63c7a5770bea8fd0ad1ea2d76c" FOREIGN KEY ("organization_admin_id") REFERENCES "organization_admin"("organization_admin_id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "position" ADD CONSTRAINT "FK_4e7ff4b54fba3f71f8d435eec80" FOREIGN KEY ("organization_id") REFERENCES "organization"("organization_id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "employee" ADD CONSTRAINT "FK_b5b0a5f2ddc7062bbdded584a14" FOREIGN KEY ("organization_id") REFERENCES "organization"("organization_id") ON DELETE SET NULL ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "tag_assignment" ADD CONSTRAINT "FK_ca91bd1ff82a7272c50e307d299" FOREIGN KEY ("employee_id") REFERENCES "employee"("employee_id") ON DELETE SET NULL ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "tag_assignment" ADD CONSTRAINT "FK_d1570923871f93a84f6b1e288c2" FOREIGN KEY ("tag_admin_id") REFERENCES "tag_admin"("tag_admin_id") ON DELETE SET NULL ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "tag_assignment" ADD CONSTRAINT "FK_692614de44a0bc15d59ebba2cc1" FOREIGN KEY ("rfid_tag_id") REFERENCES "rfid_tag"("rfid_tag_id") ON DELETE SET NULL ON UPDATE NO ACTION`);
+    }
+
+    public async down(queryRunner: QueryRunner): Promise<void> {
+        await queryRunner.query(`ALTER TABLE "tag_assignment" DROP CONSTRAINT "FK_692614de44a0bc15d59ebba2cc1"`);
+        await queryRunner.query(`ALTER TABLE "tag_assignment" DROP CONSTRAINT "FK_d1570923871f93a84f6b1e288c2"`);
+        await queryRunner.query(`ALTER TABLE "tag_assignment" DROP CONSTRAINT "FK_ca91bd1ff82a7272c50e307d299"`);
+        await queryRunner.query(`ALTER TABLE "employee" DROP CONSTRAINT "FK_b5b0a5f2ddc7062bbdded584a14"`);
+        await queryRunner.query(`ALTER TABLE "position" DROP CONSTRAINT "FK_4e7ff4b54fba3f71f8d435eec80"`);
+        await queryRunner.query(`ALTER TABLE "organization" DROP CONSTRAINT "FK_f63c7a5770bea8fd0ad1ea2d76c"`);
+        await queryRunner.query(`ALTER TABLE "building" DROP CONSTRAINT "FK_dd709c6c4b2e4d8f199c993aefd"`);
+        await queryRunner.query(`ALTER TABLE "floor" DROP CONSTRAINT "FK_1565850c51d1cc30e896101fa77"`);
+        await queryRunner.query(`ALTER TABLE "zone" DROP CONSTRAINT "FK_c4fac4a1032938134791cbd96fe"`);
+        await queryRunner.query(`ALTER TABLE "zone" DROP CONSTRAINT "FK_a62b650f24e35df37a259f91923"`);
+        await queryRunner.query(`ALTER TABLE "door" DROP CONSTRAINT "FK_692c4f814131bb3942be419f54a"`);
+        await queryRunner.query(`ALTER TABLE "door" DROP CONSTRAINT "FK_af11e53d2e6a4ec94b3768dbf62"`);
+        await queryRunner.query(`ALTER TABLE "rfid_tag" DROP CONSTRAINT "FK_0666447ae74bebdfe89fcc72099"`);
+        await queryRunner.query(`ALTER TABLE "scan_event" DROP CONSTRAINT "FK_d2f9a9971255457973463fbec8b"`);
+        await queryRunner.query(`ALTER TABLE "scan_event" DROP CONSTRAINT "FK_3bf4d3c40f797e9318d3a29fa32"`);
+        await queryRunner.query(`ALTER TABLE "notification" DROP CONSTRAINT "FK_a0da9b4eb8be55bcb0a8d1b86f3"`);
+        await queryRunner.query(`ALTER TABLE "tag_assignment" DROP COLUMN "rfid_tag_id"`);
+        await queryRunner.query(`ALTER TABLE "tag_assignment" DROP COLUMN "tag_admin_id"`);
+        await queryRunner.query(`ALTER TABLE "tag_assignment" DROP COLUMN "employee_id"`);
+        await queryRunner.query(`ALTER TABLE "zone" DROP COLUMN "building_id"`);
+        await queryRunner.query(`ALTER TABLE "zone" DROP COLUMN "floor_id"`);
+        await queryRunner.query(`ALTER TABLE "door" DROP COLUMN "zone_to_id"`);
+        await queryRunner.query(`ALTER TABLE "door" DROP COLUMN "zone_from_id"`);
+        await queryRunner.query(`ALTER TABLE "scan_event" DROP COLUMN "rfid_reader_id"`);
+        await queryRunner.query(`ALTER TABLE "scan_event" DROP COLUMN "rfid_tag_id"`);
+        await queryRunner.query(`ALTER TABLE "tag_assignment" ADD "rfidTagRfidTagId" integer`);
+        await queryRunner.query(`ALTER TABLE "tag_assignment" ADD "tagAdminTagAdminId" integer`);
+        await queryRunner.query(`ALTER TABLE "tag_assignment" ADD "employeeEmployeeId" integer`);
+        await queryRunner.query(`ALTER TABLE "zone" ADD "buildingBuildingId" integer`);
+        await queryRunner.query(`ALTER TABLE "zone" ADD "floorFloorId" integer`);
+        await queryRunner.query(`ALTER TABLE "door" ADD "zoneToZoneId" integer`);
+        await queryRunner.query(`ALTER TABLE "door" ADD "zoneFromZoneId" integer`);
+        await queryRunner.query(`ALTER TABLE "scan_event" ADD "rfidReaderRfidReaderId" integer`);
+        await queryRunner.query(`ALTER TABLE "scan_event" ADD "rfidTagRfidTagId" integer`);
+        await queryRunner.query(`ALTER TABLE "employee" RENAME COLUMN "organization_id" TO "organizationOrganizationId"`);
+        await queryRunner.query(`ALTER TABLE "position" RENAME COLUMN "organization_id" TO "organizationOrganizationId"`);
+        await queryRunner.query(`ALTER TABLE "organization" RENAME COLUMN "organization_admin_id" TO "organizationAdminOrganizationAdminId"`);
+        await queryRunner.query(`ALTER TABLE "building" RENAME COLUMN "organization_id" TO "organizationOrganizationId"`);
+        await queryRunner.query(`ALTER TABLE "floor" RENAME COLUMN "building_id" TO "buildingBuildingId"`);
+        await queryRunner.query(`ALTER TABLE "rfid_tag" RENAME COLUMN "organization_id" TO "organizationOrganizationId"`);
+        await queryRunner.query(`ALTER TABLE "notification" RENAME COLUMN "employee_id" TO "employeeEmployeeId"`);
+        await queryRunner.query(`ALTER TABLE "tag_assignment" ADD CONSTRAINT "FK_8c3fe1cd7146d06ee1b7199c738" FOREIGN KEY ("rfidTagRfidTagId") REFERENCES "rfid_tag"("rfid_tag_id") ON DELETE SET NULL ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "tag_assignment" ADD CONSTRAINT "FK_b1e6ef03ed7d0d2ca2e6b971c8c" FOREIGN KEY ("tagAdminTagAdminId") REFERENCES "tag_admin"("tag_admin_id") ON DELETE SET NULL ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "tag_assignment" ADD CONSTRAINT "FK_c772bb5c1a54379162b5be76641" FOREIGN KEY ("employeeEmployeeId") REFERENCES "employee"("employee_id") ON DELETE SET NULL ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "employee" ADD CONSTRAINT "FK_24cef36c983a76c171fd1e70e90" FOREIGN KEY ("organizationOrganizationId") REFERENCES "organization"("organization_id") ON DELETE SET NULL ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "position" ADD CONSTRAINT "FK_1c8c77edbb9538a9ad042e4f4b9" FOREIGN KEY ("organizationOrganizationId") REFERENCES "organization"("organization_id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "organization" ADD CONSTRAINT "FK_51f88571a43626038bf348ee4f1" FOREIGN KEY ("organizationAdminOrganizationAdminId") REFERENCES "organization_admin"("organization_admin_id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "building" ADD CONSTRAINT "FK_184998b381f8d2db3f99fde01ab" FOREIGN KEY ("organizationOrganizationId") REFERENCES "organization"("organization_id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "floor" ADD CONSTRAINT "FK_fe5643c4295398f67a56f52b405" FOREIGN KEY ("buildingBuildingId") REFERENCES "building"("building_id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "zone" ADD CONSTRAINT "FK_076cf2522d43ffaf46810996163" FOREIGN KEY ("buildingBuildingId") REFERENCES "building"("building_id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "zone" ADD CONSTRAINT "FK_e54e40db7de06711084c3877f2f" FOREIGN KEY ("floorFloorId") REFERENCES "floor"("floor_id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "door" ADD CONSTRAINT "FK_d3b232ecb258065a35cede91aed" FOREIGN KEY ("zoneToZoneId") REFERENCES "zone"("zone_id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "door" ADD CONSTRAINT "FK_d697d1b00ded9cb355f427f10ef" FOREIGN KEY ("zoneFromZoneId") REFERENCES "zone"("zone_id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "rfid_tag" ADD CONSTRAINT "FK_99c5e7a0cf89d113b293c292195" FOREIGN KEY ("organizationOrganizationId") REFERENCES "organization"("organization_id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "scan_event" ADD CONSTRAINT "FK_7f8dc260004b7f79098e04767b1" FOREIGN KEY ("rfidReaderRfidReaderId") REFERENCES "rfid_reader"("rfid_reader_id") ON DELETE SET NULL ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "scan_event" ADD CONSTRAINT "FK_bf16cb66edae19dd629de83fa16" FOREIGN KEY ("rfidTagRfidTagId") REFERENCES "rfid_tag"("rfid_tag_id") ON DELETE SET NULL ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "notification" ADD CONSTRAINT "FK_538c78d8c037855770c0016a2a6" FOREIGN KEY ("employeeEmployeeId") REFERENCES "employee"("employee_id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+    }
+
+}

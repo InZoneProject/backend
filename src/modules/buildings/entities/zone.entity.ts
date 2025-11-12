@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  JoinColumn,
   JoinTable,
   ManyToMany,
   ManyToOne,
@@ -57,10 +58,12 @@ export class Zone {
     onDelete: 'CASCADE',
     nullable: true,
   })
+  @JoinColumn({ name: 'floor_id' })
   floor: Floor | null;
 
   @ManyToOne(() => Building, (building) => building.zones, {
     onDelete: 'CASCADE',
   })
+  @JoinColumn({ name: 'building_id' })
   building: Building;
 }

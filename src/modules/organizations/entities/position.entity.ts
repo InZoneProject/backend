@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  JoinColumn,
   JoinTable,
   ManyToMany,
   ManyToOne,
@@ -32,5 +33,6 @@ export class Position {
   @ManyToOne(() => Organization, (organization) => organization.positions, {
     onDelete: 'CASCADE',
   })
+  @JoinColumn({ name: 'organization_id' })
   organization: Organization;
 }

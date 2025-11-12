@@ -1,4 +1,5 @@
 export const GLOBAL_ADMIN_CONSTANTS = {
-  DEFAULT_PAGINATION_LIMIT: 20,
-  DEFAULT_PAGINATION_OFFSET: 0,
-};
+  ERROR_MESSAGES: {
+    ORGANIZATION_ADMIN_NOT_FOUND: 'Organization Admin with ID $id not found',
+  },
+} as const;

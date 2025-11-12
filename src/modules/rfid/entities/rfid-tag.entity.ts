@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  JoinColumn,
   ManyToOne,
   OneToMany,
   PrimaryGeneratedColumn,
@@ -30,5 +31,6 @@ export class RfidTag {
   @ManyToOne(() => Organization, (organization) => organization.rfid_tags, {
     onDelete: 'CASCADE',
   })
+  @JoinColumn({ name: 'organization_id' })
   organization: Organization;
 }

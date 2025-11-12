@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  JoinColumn,
   JoinTable,
   ManyToMany,
   ManyToOne,
@@ -37,6 +38,9 @@ export class Employee {
   @Column({ default: false })
   is_consent_given: boolean;
 
+  @Column({ default: false })
+  is_email_verified: boolean;
+
   @CreateDateColumn()
   created_at: Date;
 
@@ -55,5 +59,6 @@ export class Employee {
   @ManyToOne(() => Organization, (organization) => organization.employees, {
     onDelete: 'SET NULL',
   })
+  @JoinColumn({ name: 'organization_id' })
   organization: Organization;
 }

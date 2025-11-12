@@ -5,19 +5,18 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { LessThan, MoreThan, Repository } from 'typeorm';
-import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { EncryptionUtil } from '../../shared/utils/encryption.util';
 import { AUTH_CONSTANTS } from '../auth/auth.constants';
 import { GLOBAL_ADMIN_CONSTANTS } from './global-admin.constants';
+import { PAGINATION_CONSTANTS } from '../../shared/constants/pagination.constants';
 import { InviteToken } from './entities/invite-token.entity';
 import { OrganizationAdmin } from '../organizations/entities/organization-admin.entity';
 import { InviteResponseDto } from './dto/invite-response.dto';
 import { InviteHistoryResponseDto } from './dto/invite-history-response.dto';
-import { InviteHistoryItemDto } from './dto/invite-history-item.dto';
 import { OrganizationAdminListResponseDto } from './dto/organization-admin-list-response.dto';
 import { InviteTokenType } from './enums/invite-token-type.enum';
-import { InviteTokenPayload } from './types/invite-token-payload.types';
+import { GlobalAdminMapper } from './global-admin.mapper';
+import { TokenService } from '../../shared/services/token.service';
 
 @Injectable()
 export class GlobalAdminService {
@@ -26,8 +25,8 @@ export class GlobalAdminService {
     private inviteTokenRepository: Repository<InviteToken>,
     @InjectRepository(OrganizationAdmin)
     private organizationAdminRepository: Repository<OrganizationAdmin>,
-    private jwtService: JwtService,
     private configService: ConfigService,
+    private tokenService: TokenService,
   ) {}
 
   async generateInviteToken(): Promise<InviteResponseDto> {
@@ -40,24 +39,17 @@ export class GlobalAdminService {
       );
     }
 
-    const invite_token = this.createJwtToken();
-    const key = this.configService.getOrThrow<string>(
-      'INVITE_TOKEN_ENCRYPTION_KEY',
+    const invite_token = this.tokenService.createJwtToken(
+      InviteTokenType.ORGANIZATION_ADMIN_INVITE,
     );
-    const algorithm = this.configService.getOrThrow<string>(
-      'ENCRYPTION_ALGORITHM',
-    );
-    const token_encrypted = EncryptionUtil.encrypt(
-      invite_token,
-      key,
-      algorithm,
-    );
-    const expires_at = this.calculateExpirationDate();
+    const token_encrypted = this.tokenService.encryptToken(invite_token);
+    const expires_at = this.tokenService.calculateExpirationDate();
 
     await this.inviteTokenRepository.save({
       token_encrypted,
       expires_at,
       is_used: false,
+      invite_type: InviteTokenType.ORGANIZATION_ADMIN_INVITE,
     });
 
     const frontendUrl = this.configService.getOrThrow<string>('FRONTEND_URL');
@@ -75,16 +67,8 @@ export class GlobalAdminService {
       return null;
     }
 
-    const key = this.configService.getOrThrow<string>(
-      'INVITE_TOKEN_ENCRYPTION_KEY',
-    );
-    const algorithm = this.configService.getOrThrow<string>(
-      'ENCRYPTION_ALGORITHM',
-    );
-    const invite_token = EncryptionUtil.decrypt(
+    const invite_token = this.tokenService.decryptToken(
       storedToken.token_encrypted,
-      key,
-      algorithm,
     );
     const frontendUrl = this.configService.getOrThrow<string>('FRONTEND_URL');
 
@@ -95,34 +79,27 @@ export class GlobalAdminService {
   }
 
   async getInviteTokenHistory(
-    offset: number = GLOBAL_ADMIN_CONSTANTS.DEFAULT_PAGINATION_OFFSET,
-    limit: number = GLOBAL_ADMIN_CONSTANTS.DEFAULT_PAGINATION_LIMIT,
+    offset: number = PAGINATION_CONSTANTS.DEFAULT_OFFSET,
+    limit: number = PAGINATION_CONSTANTS.DEFAULT_LIMIT,
   ): Promise<InviteHistoryResponseDto> {
     const [tokens, total] = await this.inviteTokenRepository.findAndCount({
-      where: { is_used: true },
-      relations: ['used_by'],
+      where: {
+        is_used: true,
+        invite_type: InviteTokenType.ORGANIZATION_ADMIN_INVITE,
+      },
+      relations: ['used_by_organization_admin'],
       order: { created_at: 'DESC' },
       skip: offset,
       take: limit,
     });
 
-    const items: InviteHistoryItemDto[] = [];
-    for (const token of tokens) {
-      if (token.used_at && token.used_by) {
-        items.push({
-          created_at: token.created_at,
-          expires_at: token.expires_at,
-          used_at: token.used_at,
-          used_by: token.used_by.email,
-        });
-      }
-    }
+    const items = tokens
+      .filter((token) => token.used_at && token.used_by_organization_admin)
+      .map((token) => GlobalAdminMapper.toInviteHistoryItemDto(token));
 
     return {
       items,
       total,
-      offset,
-      limit,
     };
   }
 
@@ -130,6 +107,7 @@ export class GlobalAdminService {
     await this.inviteTokenRepository.delete({
       expires_at: LessThan(new Date()),
       is_used: false,
+      invite_type: InviteTokenType.ORGANIZATION_ADMIN_INVITE,
     });
   }
 
@@ -138,28 +116,14 @@ export class GlobalAdminService {
       where: {
         is_used: false,
         expires_at: MoreThan(new Date()),
+        invite_type: InviteTokenType.ORGANIZATION_ADMIN_INVITE,
       },
     });
   }
 
-  private createJwtToken(): string {
-    const payload: InviteTokenPayload = {
-      type: InviteTokenType.ORGANIZATION_ADMIN_INVITE,
-      timestamp: Date.now(),
-    };
-
-    return this.jwtService.sign(payload, {
-      expiresIn: AUTH_CONSTANTS.INVITE_TOKEN_EXPIRES_IN,
-    });
-  }
-
-  private calculateExpirationDate(): Date {
-    return new Date(Date.now() + AUTH_CONSTANTS.INVITE_TOKEN_EXPIRES_IN_MS);
-  }
-
   async getAllOrganizationAdmins(
-    offset: number = GLOBAL_ADMIN_CONSTANTS.DEFAULT_PAGINATION_OFFSET,
-    limit: number = GLOBAL_ADMIN_CONSTANTS.DEFAULT_PAGINATION_LIMIT,
+    offset: number = PAGINATION_CONSTANTS.DEFAULT_OFFSET,
+    limit: number = PAGINATION_CONSTANTS.DEFAULT_LIMIT,
   ): Promise<OrganizationAdminListResponseDto> {
     const [items, total] = await this.organizationAdminRepository.findAndCount({
       skip: offset,
@@ -169,18 +133,10 @@ export class GlobalAdminService {
     });
 
     return {
-      items: items.map((admin) => ({
-        organization_admin_id: admin.organization_admin_id,
-        full_name: admin.full_name,
-        email: admin.email,
-        phone: admin.phone,
-        photo: admin.photo,
-        created_at: admin.created_at,
-        organizations_count: admin.organizations?.length || 0,
-      })),
+      items: items.map((admin) =>
+        GlobalAdminMapper.toOrganizationAdminItemDto(admin),
+      ),
       total,
-      offset,
-      limit,
     };
   }
 
@@ -190,7 +146,12 @@ export class GlobalAdminService {
     });
 
     if (!admin) {
-      throw new NotFoundException(`Organization Admin with ID ${id} not found`);
+      throw new NotFoundException(
+        GLOBAL_ADMIN_CONSTANTS.ERROR_MESSAGES.ORGANIZATION_ADMIN_NOT_FOUND.replace(
+          '$id',
+          id.toString(),
+        ),
+      );
     }
 
     await this.organizationAdminRepository.remove(admin);

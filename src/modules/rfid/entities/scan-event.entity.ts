@@ -1,6 +1,7 @@
 import {
   CreateDateColumn,
   Entity,
+  JoinColumn,
   ManyToOne,
   PrimaryGeneratedColumn,
 } from 'typeorm';
@@ -18,10 +19,12 @@ export class ScanEvent {
   @ManyToOne(() => RfidTag, (rfid_tag) => rfid_tag.scan_events, {
     onDelete: 'SET NULL',
   })
+  @JoinColumn({ name: 'rfid_tag_id' })
   rfid_tag: RfidTag;
 
   @ManyToOne(() => RfidReader, (rfid_reader) => rfid_reader.scan_events, {
     onDelete: 'SET NULL',
   })
+  @JoinColumn({ name: 'rfid_reader_id' })
   rfid_reader: RfidReader;
 }

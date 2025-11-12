@@ -10,6 +10,7 @@ import { AccessControlModule } from './modules/access-control/access-control.mod
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { GlobalAdminModule } from './modules/global-admin/global-admin.module';
 import { TagAdminModule } from './modules/tag-admin/tag-admin.module';
+import { SharedModule } from './shared/shared.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { TagAdminModule } from './modules/tag-admin/tag-admin.module';
       inject: [ConfigService],
     }),
 
+    SharedModule,
     AuthModule,
     OrganizationsModule,
     EmployeesModule,

@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  JoinColumn,
   ManyToOne,
   PrimaryGeneratedColumn,
 } from 'typeorm';
@@ -28,5 +29,6 @@ export class Notification {
   @ManyToOne(() => Employee, (employee) => employee.notifications, {
     onDelete: 'CASCADE',
   })
+  @JoinColumn({ name: 'employee_id' })
   employee: Employee;
 }
