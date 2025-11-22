@@ -1,10 +1,8 @@
 export const AUTH_CONSTANTS = {
   BCRYPT_ROUNDS: 10,
-  INVITE_TOKEN_EXPIRES_IN: '24h' as const,
   INVITE_TOKEN_EXPIRES_IN_MS: 24 * 60 * 60 * 1000,
   VERIFICATION_CODE_EXPIRES_IN_MS: 10 * 60 * 1000,
   VERIFICATION_CODE_LENGTH: 6,
-  VERIFICATION_CODE_RETRY_DELAY_MS: 60 * 1000,
   ERROR_MESSAGES: {
     INVALID_CREDENTIALS: 'Invalid credentials',
     MISSING_ENV_VARIABLES:
@@ -20,5 +18,7 @@ export const AUTH_CONSTANTS = {
     VERIFICATION_CODE_EXPIRED: 'Verification code has expired',
     GLOBAL_ADMIN_NO_VERIFICATION:
       'Global admin does not need email verification',
+    VERIFICATION_CODE_ALREADY_SENT:
+      'Verification code has already been sent. Please wait before requesting a new one',
   },
 } as const;

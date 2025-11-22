@@ -1,9 +1,7 @@
 import {
   Injectable,
   NotFoundException,
-  BadRequestException,
   ConflictException,
-  ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, LessThan, MoreThan, Repository } from 'typeorm';
@@ -26,6 +24,9 @@ import { AUTH_CONSTANTS } from '../auth/auth.constants';
 import { OrganizationsMapper } from './organizations.mapper';
 import { InviteTokenType } from '../global-admin/enums/invite-token-type.enum';
 import { TokenService } from '../../shared/services/token.service';
+import { OrganizationOwnershipValidator } from '../../shared/validators/organization-ownership.validator';
+import { FRONTEND_ROUTES } from '../../shared/constants/frontend-routes.constants';
+import { DoorSide } from '../buildings/enums/door-side.enum';
 
 @Injectable()
 export class OrganizationsService {
@@ -39,17 +40,13 @@ export class OrganizationsService {
     private readonly dataSource: DataSource,
     private readonly configService: ConfigService,
     private readonly tokenService: TokenService,
+    private readonly organizationOwnershipValidator: OrganizationOwnershipValidator,
   ) {}
 
   async createOrganization(
     organizationAdminId: number,
     createOrganizationDto: OrganizationRequest,
   ): Promise<CreateOrganizationResponse> {
-    this.validateWorkHours(
-      createOrganizationDto.work_day_start_time,
-      createOrganizationDto.work_day_end_time,
-    );
-
     const organizationAdmin =
       await this.validateOrganizationAdmin(organizationAdminId);
 
@@ -61,25 +58,17 @@ export class OrganizationsService {
       await manager.save(organization);
 
       const building = manager.create(Building, {
-        title: ORGANIZATIONS_CONSTANTS.DEFAULT_STRUCTURE.BUILDING_TITLE,
         address: createOrganizationDto.description,
         organization,
       });
       await manager.save(building);
 
       const floor = manager.create(Floor, {
-        floor_number: ORGANIZATIONS_CONSTANTS.DEFAULT_STRUCTURE.FLOOR_NUMBER,
         building,
       });
       await manager.save(floor);
 
       const zone = manager.create(Zone, {
-        title: ORGANIZATIONS_CONSTANTS.DEFAULT_STRUCTURE.ZONE_TITLE,
-        photo: ORGANIZATIONS_CONSTANTS.DEFAULT_STRUCTURE.ZONE_PHOTO,
-        x_coordinate:
-          ORGANIZATIONS_CONSTANTS.DEFAULT_STRUCTURE.ZONE_X_COORDINATE,
-        y_coordinate:
-          ORGANIZATIONS_CONSTANTS.DEFAULT_STRUCTURE.ZONE_Y_COORDINATE,
         floor,
         building,
       });
@@ -88,6 +77,8 @@ export class OrganizationsService {
       const door = manager.create(Door, {
         zone_to: zone,
         is_entrance: true,
+        entrance_door_side: DoorSide.BOTTOM,
+        floor: floor,
       });
       await manager.save(door);
 
@@ -105,25 +96,11 @@ export class OrganizationsService {
     organizationAdminId: number,
     organizationId: number,
   ): Promise<void> {
-    const organization = await this.organizationRepository.findOne({
-      where: { organization_id: organizationId },
-      relations: ['organization_admin'],
-    });
-
-    if (!organization) {
-      throw new NotFoundException(
-        ORGANIZATIONS_CONSTANTS.ERROR_MESSAGES.ORGANIZATION_NOT_FOUND,
+    const organization =
+      await this.organizationOwnershipValidator.validateOwnership(
+        organizationAdminId,
+        organizationId,
       );
-    }
-
-    if (
-      organization.organization_admin.organization_admin_id !==
-      organizationAdminId
-    ) {
-      throw new ForbiddenException(
-        ORGANIZATIONS_CONSTANTS.ERROR_MESSAGES.ACCESS_DENIED,
-      );
-    }
 
     await this.organizationRepository.remove(organization);
   }
@@ -142,26 +119,6 @@ export class OrganizationsService {
     }
 
     return organizationAdmin;
-  }
-
-  private validateWorkHours(startTime: string, endTime: string): void {
-    const [startHours, startMinutes, startSeconds] = startTime
-      .split(':')
-      .map(Number);
-    const [endHours, endMinutes, endSeconds] = endTime.split(':').map(Number);
-
-    const startInMinutes = startHours * 60 + startMinutes + startSeconds / 60;
-    const endInMinutes = endHours * 60 + endMinutes + endSeconds / 60;
-
-    const durationInHours = (endInMinutes - startInMinutes) / 60;
-
-    if (
-      durationInHours < ORGANIZATIONS_CONSTANTS.WORK_HOURS.MIN_DURATION_HOURS
-    ) {
-      throw new BadRequestException(
-        ORGANIZATIONS_CONSTANTS.ERROR_MESSAGES.INVALID_WORK_HOURS,
-      );
-    }
   }
 
   async getOrganizations(
@@ -194,30 +151,11 @@ export class OrganizationsService {
     organizationId: number,
     updateOrganizationDto: OrganizationRequest,
   ): Promise<OrganizationItemDto> {
-    const organization = await this.organizationRepository.findOne({
-      where: { organization_id: organizationId },
-      relations: ['organization_admin'],
-    });
-
-    if (!organization) {
-      throw new NotFoundException(
-        ORGANIZATIONS_CONSTANTS.ERROR_MESSAGES.ORGANIZATION_NOT_FOUND,
+    const organization =
+      await this.organizationOwnershipValidator.validateOwnership(
+        organizationAdminId,
+        organizationId,
       );
-    }
-
-    if (
-      organization.organization_admin.organization_admin_id !==
-      organizationAdminId
-    ) {
-      throw new ForbiddenException(
-        ORGANIZATIONS_CONSTANTS.ERROR_MESSAGES.ACCESS_DENIED,
-      );
-    }
-
-    this.validateWorkHours(
-      updateOrganizationDto.work_day_start_time,
-      updateOrganizationDto.work_day_end_time,
-    );
 
     Object.assign(organization, updateOrganizationDto);
     await this.organizationRepository.save(organization);
@@ -231,25 +169,11 @@ export class OrganizationsService {
   ): Promise<InviteResponseDto> {
     await this.deleteExpiredUnusedTokens(organizationId);
 
-    const organization = await this.organizationRepository.findOne({
-      where: { organization_id: organizationId },
-      relations: ['organization_admin'],
-    });
-
-    if (!organization) {
-      throw new NotFoundException(
-        ORGANIZATIONS_CONSTANTS.ERROR_MESSAGES.ORGANIZATION_NOT_FOUND,
+    const organization =
+      await this.organizationOwnershipValidator.validateOwnership(
+        organizationAdminId,
+        organizationId,
       );
-    }
-
-    if (
-      organization.organization_admin.organization_admin_id !==
-      organizationAdminId
-    ) {
-      throw new ForbiddenException(
-        ORGANIZATIONS_CONSTANTS.ERROR_MESSAGES.ACCESS_DENIED,
-      );
-    }
 
     const existingToken = await this.findActiveTagAdminToken(organizationId);
     if (existingToken) {
@@ -275,7 +199,7 @@ export class OrganizationsService {
     const frontendUrl = this.configService.getOrThrow<string>('FRONTEND_URL');
 
     return {
-      invite_url: `${frontendUrl}/register/tag-admin?token=${invite_token}`,
+      invite_url: `${frontendUrl}${FRONTEND_ROUTES.REGISTER_TAG_ADMIN}?token=${invite_token}`,
       expires_at,
     };
   }
@@ -300,5 +224,120 @@ export class OrganizationsService {
         organization: { organization_id: organizationId },
       },
     });
+  }
+
+  async generateEmployeeInvite(
+    organizationAdminId: number,
+    organizationId: number,
+  ): Promise<InviteResponseDto> {
+    await this.deleteExpiredUnusedEmployeeTokens(organizationId);
+
+    const organization =
+      await this.organizationOwnershipValidator.validateOwnership(
+        organizationAdminId,
+        organizationId,
+      );
+
+    const existingToken = await this.findActiveEmployeeToken(organizationId);
+    if (existingToken) {
+      throw new ConflictException(
+        AUTH_CONSTANTS.ERROR_MESSAGES.ACTIVE_INVITE_TOKEN_EXISTS,
+      );
+    }
+
+    const invite_token = this.tokenService.createJwtToken(
+      InviteTokenType.EMPLOYEE_INVITE,
+    );
+    const token_encrypted = this.tokenService.encryptToken(invite_token);
+    const expires_at = this.tokenService.calculateExpirationDate();
+
+    await this.inviteTokenRepository.save({
+      token_encrypted,
+      expires_at,
+      is_used: false,
+      invite_type: InviteTokenType.EMPLOYEE_INVITE,
+      organization,
+    });
+
+    const frontendUrl = this.configService.getOrThrow<string>('FRONTEND_URL');
+
+    return {
+      invite_url: `${frontendUrl}${FRONTEND_ROUTES.JOIN_ORGANIZATION}?token=${invite_token}`,
+      expires_at,
+    };
+  }
+
+  private async deleteExpiredUnusedEmployeeTokens(
+    organizationId: number,
+  ): Promise<void> {
+    await this.inviteTokenRepository.delete({
+      expires_at: LessThan(new Date()),
+      is_used: false,
+      invite_type: InviteTokenType.EMPLOYEE_INVITE,
+      organization: { organization_id: organizationId },
+    });
+  }
+
+  private async findActiveEmployeeToken(organizationId: number) {
+    return this.inviteTokenRepository.findOne({
+      where: {
+        is_used: false,
+        expires_at: MoreThan(new Date()),
+        invite_type: InviteTokenType.EMPLOYEE_INVITE,
+        organization: { organization_id: organizationId },
+      },
+    });
+  }
+
+  async getTagAdminInviteStatus(
+    organizationAdminId: number,
+    organizationId: number,
+  ): Promise<InviteResponseDto | null> {
+    await this.organizationOwnershipValidator.validateOwnership(
+      organizationAdminId,
+      organizationId,
+    );
+
+    const storedToken = await this.findActiveTagAdminToken(organizationId);
+
+    if (!storedToken) {
+      return null;
+    }
+
+    const invite_token = this.tokenService.decryptToken(
+      storedToken.token_encrypted,
+    );
+    const frontendUrl = this.configService.getOrThrow<string>('FRONTEND_URL');
+
+    return {
+      invite_url: `${frontendUrl}${FRONTEND_ROUTES.REGISTER_TAG_ADMIN}?token=${invite_token}`,
+      expires_at: storedToken.expires_at,
+    };
+  }
+
+  async getEmployeeInviteStatus(
+    organizationAdminId: number,
+    organizationId: number,
+  ): Promise<InviteResponseDto | null> {
+    await this.organizationOwnershipValidator.validateOwnership(
+      organizationAdminId,
+      organizationId,
+    );
+
+    const storedToken = await this.findActiveEmployeeToken(organizationId);
+
+    if (!storedToken) {
+      return null;
+    }
+
+    const invite_token = this.tokenService.decryptToken(
+      storedToken.token_encrypted,
+    );
+    const frontendUrl = this.configService.getOrThrow<string>('FRONTEND_URL');
+
+    return {
+      invite_url: `${frontendUrl}${FRONTEND_ROUTES.JOIN_ORGANIZATION}?token=${invite_token}`,
+      expires_at: storedToken.expires_at,
+    };
   }
 }

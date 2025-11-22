@@ -26,12 +26,6 @@ export class Organization {
   @Column({ length: COLUMN_LENGTHS.DESCRIPTION, nullable: true })
   description: string;
 
-  @Column({ type: 'time' })
-  work_day_start_time: string;
-
-  @Column({ type: 'time' })
-  work_day_end_time: string;
-
   @CreateDateColumn()
   created_at: Date;
 

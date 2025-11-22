@@ -9,6 +9,7 @@ import {
 import { OrganizationAdmin } from '../../organizations/entities/organization-admin.entity';
 import { Organization } from '../../organizations/entities/organization.entity';
 import { TagAdmin } from '../../tag-admin/entities/tag-admin.entity';
+import { Employee } from '../../employees/entities/employee.entity';
 import { InviteTokenType } from '../enums/invite-token-type.enum';
 
 @Entity()
@@ -37,7 +38,10 @@ export class InviteToken {
   @CreateDateColumn()
   created_at: Date;
 
-  @ManyToOne(() => Organization, { nullable: true })
+  @ManyToOne(() => Organization, {
+    nullable: true,
+    onDelete: 'CASCADE',
+  })
   @JoinColumn({ name: 'organization_id' })
   organization: Organization | null;
 
@@ -48,4 +52,8 @@ export class InviteToken {
   @ManyToOne(() => TagAdmin, { nullable: true })
   @JoinColumn({ name: 'used_by_tag_admin_id' })
   used_by_tag_admin: TagAdmin | null;
+
+  @ManyToOne(() => Employee, { nullable: true })
+  @JoinColumn({ name: 'used_by_employee_id' })
+  used_by_employee: Employee | null;
 }

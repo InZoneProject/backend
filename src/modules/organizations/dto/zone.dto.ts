@@ -4,7 +4,7 @@ export class ZoneDto {
   is_transition_between_floors: boolean;
   width: number;
   height: number;
-  photo: string;
+  photo: string | null;
   x_coordinate: number;
   y_coordinate: number;
 }

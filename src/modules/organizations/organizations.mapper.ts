@@ -22,8 +22,6 @@ export class OrganizationsMapper {
       organization_id: organization.organization_id,
       title: organization.title,
       description: organization.description,
-      work_day_start_time: organization.work_day_start_time,
-      work_day_end_time: organization.work_day_end_time,
       created_at: organization.created_at,
       building: this.toBuildingDto(building),
       floor: this.toFloorDto(floor),
@@ -74,8 +72,6 @@ export class OrganizationsMapper {
       organization_id: organization.organization_id,
       title: organization.title,
       description: organization.description,
-      work_day_start_time: organization.work_day_start_time,
-      work_day_end_time: organization.work_day_end_time,
       created_at: organization.created_at,
     };
   }

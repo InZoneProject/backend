@@ -9,13 +9,15 @@ import {
 } from 'typeorm';
 import { Building } from './building.entity';
 import { Zone } from './zone.entity';
+import { Door } from './door.entity';
+import { DEFAULT_VALUES } from '../../../shared/constants/default-structure.constants';
 
 @Entity()
 export class Floor {
   @PrimaryGeneratedColumn()
   floor_id: number;
 
-  @Column()
+  @Column({ default: DEFAULT_VALUES.FLOOR_NUMBER })
   floor_number: number;
 
   @CreateDateColumn()
@@ -31,4 +33,9 @@ export class Floor {
     cascade: true,
   })
   zones: Zone[];
+
+  @OneToMany(() => Door, (door) => door.floor, {
+    cascade: true,
+  })
+  doors: Door[];
 }

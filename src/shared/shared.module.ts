@@ -1,11 +1,18 @@
 import { Module, Global } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TokenService } from './services/token.service';
+import { InviteTokenService } from './services/invite-token.service';
+import { OrganizationOwnershipValidator } from './validators/organization-ownership.validator';
+import { FileValidator } from './validators/file.validator';
+import { InviteToken } from '../modules/global-admin/entities/invite-token.entity';
+import { Organization } from '../modules/organizations/entities/organization.entity';
 
 @Global()
 @Module({
   imports: [
+    TypeOrmModule.forFeature([InviteToken, Organization]),
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (config: ConfigService) => ({
@@ -17,7 +24,17 @@ import { TokenService } from './services/token.service';
       inject: [ConfigService],
     }),
   ],
-  providers: [TokenService],
-  exports: [TokenService],
+  providers: [
+    TokenService,
+    InviteTokenService,
+    OrganizationOwnershipValidator,
+    FileValidator,
+  ],
+  exports: [
+    TokenService,
+    InviteTokenService,
+    OrganizationOwnershipValidator,
+    FileValidator,
+  ],
 })
 export class SharedModule {}

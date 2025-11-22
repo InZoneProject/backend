@@ -14,31 +14,32 @@ import { ZoneAccessRule } from '../../access-control/entities/zone-access-rule.e
 import { Floor } from './floor.entity';
 import { Building } from './building.entity';
 import { COLUMN_LENGTHS } from '../../../shared/constants/column-lengths';
+import { DEFAULT_VALUES } from '../../../shared/constants/default-structure.constants';
 
 @Entity()
 export class Zone {
   @PrimaryGeneratedColumn()
   zone_id: number;
 
-  @Column({ length: COLUMN_LENGTHS.TITLE })
+  @Column({ length: COLUMN_LENGTHS.TITLE, default: DEFAULT_VALUES.ZONE_TITLE })
   title: string;
 
   @Column({ default: false })
   is_transition_between_floors: boolean;
 
-  @Column({ default: 10 })
+  @Column({ default: DEFAULT_VALUES.ZONE_WIDTH })
   width: number;
 
-  @Column({ default: 10 })
+  @Column({ default: DEFAULT_VALUES.ZONE_HEIGHT })
   height: number;
 
-  @Column({ length: COLUMN_LENGTHS.PHOTO })
-  photo: string;
+  @Column({ type: 'varchar', length: COLUMN_LENGTHS.PHOTO, nullable: true })
+  photo: string | null;
 
-  @Column()
+  @Column({ default: DEFAULT_VALUES.ZONE_X_COORDINATE })
   x_coordinate: number;
 
-  @Column()
+  @Column({ default: DEFAULT_VALUES.ZONE_Y_COORDINATE })
   y_coordinate: number;
 
   @CreateDateColumn()

@@ -29,6 +29,10 @@ import { COLUMN_LENGTHS } from '../../shared/constants/column-lengths';
 
 @Injectable()
 export class AuthService implements OnModuleInit {
+  private readonly jwtSecret: string;
+  private readonly encryptionKey: string;
+  private readonly encryptionAlgorithm: string;
+
   constructor(
     @InjectRepository(GlobalAdmin)
     private globalAdminRepository: Repository<GlobalAdmin>,
@@ -45,7 +49,15 @@ export class AuthService implements OnModuleInit {
     private jwtService: JwtService,
     private configService: ConfigService,
     private emailService: EmailService,
-  ) {}
+  ) {
+    this.jwtSecret = this.configService.getOrThrow<string>('JWT_SECRET');
+    this.encryptionKey = this.configService.getOrThrow<string>(
+      'INVITE_TOKEN_ENCRYPTION_KEY',
+    );
+    this.encryptionAlgorithm = this.configService.getOrThrow<string>(
+      'ENCRYPTION_ALGORITHM',
+    );
+  }
 
   async onModuleInit() {
     await this.ensureGlobalAdminExists();
@@ -143,6 +155,7 @@ export class AuthService implements OnModuleInit {
     const tokenPayload: JwtPayload = {
       sub: newAdmin.organization_admin_id,
       role: UserRole.ORGANIZATION_ADMIN,
+      is_email_verified: false,
     };
 
     return {
@@ -175,6 +188,7 @@ export class AuthService implements OnModuleInit {
     const payload: JwtPayload = {
       sub: admin.organization_admin_id,
       role: UserRole.ORGANIZATION_ADMIN,
+      is_email_verified: admin.is_email_verified,
     };
 
     return {
@@ -228,6 +242,7 @@ export class AuthService implements OnModuleInit {
     const tokenPayload: JwtPayload = {
       sub: newTagAdmin.tag_admin_id,
       role: UserRole.TAG_ADMIN,
+      is_email_verified: false,
     };
 
     return {
@@ -260,6 +275,7 @@ export class AuthService implements OnModuleInit {
     const payload: JwtPayload = {
       sub: admin.tag_admin_id,
       role: UserRole.TAG_ADMIN,
+      is_email_verified: admin.is_email_verified,
     };
 
     return {
@@ -295,6 +311,7 @@ export class AuthService implements OnModuleInit {
     const payload: JwtPayload = {
       sub: newEmployee.employee_id,
       role: UserRole.EMPLOYEE,
+      is_email_verified: false,
     };
 
     return {
@@ -327,6 +344,7 @@ export class AuthService implements OnModuleInit {
     const payload: JwtPayload = {
       sub: employee.employee_id,
       role: UserRole.EMPLOYEE,
+      is_email_verified: employee.is_email_verified,
     };
 
     return {
@@ -401,14 +419,9 @@ export class AuthService implements OnModuleInit {
     if (existingVerification) {
       const timeSinceLastCode =
         Date.now() - existingVerification.created_at.getTime();
-      if (timeSinceLastCode < AUTH_CONSTANTS.VERIFICATION_CODE_RETRY_DELAY_MS) {
-        const minutesRemaining = Math.ceil(
-          (AUTH_CONSTANTS.VERIFICATION_CODE_RETRY_DELAY_MS -
-            timeSinceLastCode) /
-            60000,
-        );
+      if (timeSinceLastCode < AUTH_CONSTANTS.VERIFICATION_CODE_EXPIRES_IN_MS) {
         throw new BadRequestException(
-          `Please wait ${minutesRemaining} minute(s) before requesting a new code`,
+          AUTH_CONSTANTS.ERROR_MESSAGES.VERIFICATION_CODE_ALREADY_SENT,
         );
       }
     }
@@ -577,7 +590,9 @@ export class AuthService implements OnModuleInit {
   ): Promise<InviteToken> {
     let payload: InviteTokenPayload;
     try {
-      payload = this.jwtService.verify<InviteTokenPayload>(inviteToken);
+      payload = this.jwtService.verify<InviteTokenPayload>(inviteToken, {
+        secret: this.jwtSecret,
+      });
     } catch {
       throw new BadRequestException(
         AUTH_CONSTANTS.ERROR_MESSAGES.INVALID_INVITE_TOKEN,
@@ -589,13 +604,6 @@ export class AuthService implements OnModuleInit {
         AUTH_CONSTANTS.ERROR_MESSAGES.INVALID_INVITE_TOKEN,
       );
     }
-
-    const key = this.configService.getOrThrow<string>(
-      'INVITE_TOKEN_ENCRYPTION_KEY',
-    );
-    const algorithm = this.configService.getOrThrow<string>(
-      'ENCRYPTION_ALGORITHM',
-    );
 
     const allActiveTokens = await this.inviteTokenRepository.find({
       where: {
@@ -612,8 +620,8 @@ export class AuthService implements OnModuleInit {
     for (const token of allActiveTokens) {
       const decrypted = EncryptionUtil.decrypt(
         token.token_encrypted,
-        key,
-        algorithm,
+        this.encryptionKey,
+        this.encryptionAlgorithm,
       );
       if (decrypted === inviteToken) {
         storedToken = token;

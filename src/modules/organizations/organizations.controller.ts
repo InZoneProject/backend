@@ -96,4 +96,28 @@ export class OrganizationsController {
   ) {
     return this.organizationsService.generateTagAdminInvite(req.user.sub, id);
   }
+
+  @Post(':id/employee-invite')
+  async generateEmployeeInvite(
+    @Param('id', ParseIntPipe) id: number,
+    @Req() req: RequestWithUser,
+  ) {
+    return this.organizationsService.generateEmployeeInvite(req.user.sub, id);
+  }
+
+  @Get(':id/tag-admin-invite-status')
+  async getTagAdminInviteStatus(
+    @Param('id', ParseIntPipe) id: number,
+    @Req() req: RequestWithUser,
+  ) {
+    return this.organizationsService.getTagAdminInviteStatus(req.user.sub, id);
+  }
+
+  @Get(':id/employee-invite-status')
+  async getEmployeeInviteStatus(
+    @Param('id', ParseIntPipe) id: number,
+    @Req() req: RequestWithUser,
+  ) {
+    return this.organizationsService.getEmployeeInviteStatus(req.user.sub, id);
+  }
 }

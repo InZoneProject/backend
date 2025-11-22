@@ -8,6 +8,7 @@ import { InviteTokenPayload } from '../../modules/global-admin/types/invite-toke
 
 @Injectable()
 export class TokenService {
+  private readonly jwtSecret: string;
   private readonly encryptionKey: string;
   private readonly encryptionAlgorithm: string;
 
@@ -15,6 +16,7 @@ export class TokenService {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
   ) {
+    this.jwtSecret = this.configService.getOrThrow<string>('JWT_SECRET');
     this.encryptionKey = this.configService.getOrThrow<string>(
       'INVITE_TOKEN_ENCRYPTION_KEY',
     );
@@ -30,7 +32,8 @@ export class TokenService {
     };
 
     return this.jwtService.sign(payload, {
-      expiresIn: AUTH_CONSTANTS.INVITE_TOKEN_EXPIRES_IN,
+      secret: this.jwtSecret,
+      expiresIn: Math.floor(AUTH_CONSTANTS.INVITE_TOKEN_EXPIRES_IN_MS / 1000),
     });
   }
 

@@ -4,8 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { LessThan, MoreThan, Repository } from 'typeorm';
-import { ConfigService } from '@nestjs/config';
+import { Repository } from 'typeorm';
 import { AUTH_CONSTANTS } from '../auth/auth.constants';
 import { GLOBAL_ADMIN_CONSTANTS } from './global-admin.constants';
 import { PAGINATION_CONSTANTS } from '../../shared/constants/pagination.constants';
@@ -16,7 +15,7 @@ import { InviteHistoryResponseDto } from './dto/invite-history-response.dto';
 import { OrganizationAdminListResponseDto } from './dto/organization-admin-list-response.dto';
 import { InviteTokenType } from './enums/invite-token-type.enum';
 import { GlobalAdminMapper } from './global-admin.mapper';
-import { TokenService } from '../../shared/services/token.service';
+import { InviteTokenService } from '../../shared/services/invite-token.service';
 
 @Injectable()
 export class GlobalAdminService {
@@ -25,57 +24,36 @@ export class GlobalAdminService {
     private inviteTokenRepository: Repository<InviteToken>,
     @InjectRepository(OrganizationAdmin)
     private organizationAdminRepository: Repository<OrganizationAdmin>,
-    private configService: ConfigService,
-    private tokenService: TokenService,
+    private inviteTokenService: InviteTokenService,
   ) {}
 
   async generateInviteToken(): Promise<InviteResponseDto> {
-    await this.deleteExpiredUnusedTokens();
+    await this.inviteTokenService.deleteExpiredUnusedTokens({
+      tokenType: InviteTokenType.ORGANIZATION_ADMIN_INVITE,
+    });
 
-    const existingToken = await this.findActiveToken();
+    const existingToken = await this.inviteTokenService.findActiveToken({
+      tokenType: InviteTokenType.ORGANIZATION_ADMIN_INVITE,
+    });
+
     if (existingToken) {
       throw new ConflictException(
         AUTH_CONSTANTS.ERROR_MESSAGES.ACTIVE_INVITE_TOKEN_EXISTS,
       );
     }
 
-    const invite_token = this.tokenService.createJwtToken(
-      InviteTokenType.ORGANIZATION_ADMIN_INVITE,
-    );
-    const token_encrypted = this.tokenService.encryptToken(invite_token);
-    const expires_at = this.tokenService.calculateExpirationDate();
-
-    await this.inviteTokenRepository.save({
-      token_encrypted,
-      expires_at,
-      is_used: false,
-      invite_type: InviteTokenType.ORGANIZATION_ADMIN_INVITE,
+    return this.inviteTokenService.generateInviteToken({
+      tokenType: InviteTokenType.ORGANIZATION_ADMIN_INVITE,
+      frontendPath: '/register',
     });
-
-    const frontendUrl = this.configService.getOrThrow<string>('FRONTEND_URL');
-
-    return {
-      invite_url: `${frontendUrl}/register?token=${invite_token}`,
-      expires_at,
-    };
   }
 
   async getValidInviteToken(): Promise<InviteResponseDto | null> {
-    const storedToken = await this.findActiveToken();
+    const storedToken = await this.inviteTokenService.findActiveToken({
+      tokenType: InviteTokenType.ORGANIZATION_ADMIN_INVITE,
+    });
 
-    if (!storedToken) {
-      return null;
-    }
-
-    const invite_token = this.tokenService.decryptToken(
-      storedToken.token_encrypted,
-    );
-    const frontendUrl = this.configService.getOrThrow<string>('FRONTEND_URL');
-
-    return {
-      invite_url: `${frontendUrl}/register?token=${invite_token}`,
-      expires_at: storedToken.expires_at,
-    };
+    return this.inviteTokenService.getInviteStatus(storedToken, '/register');
   }
 
   async getInviteTokenHistory(
@@ -101,24 +79,6 @@ export class GlobalAdminService {
       items,
       total,
     };
-  }
-
-  private async deleteExpiredUnusedTokens(): Promise<void> {
-    await this.inviteTokenRepository.delete({
-      expires_at: LessThan(new Date()),
-      is_used: false,
-      invite_type: InviteTokenType.ORGANIZATION_ADMIN_INVITE,
-    });
-  }
-
-  private async findActiveToken() {
-    return this.inviteTokenRepository.findOne({
-      where: {
-        is_used: false,
-        expires_at: MoreThan(new Date()),
-        invite_type: InviteTokenType.ORGANIZATION_ADMIN_INVITE,
-      },
-    });
   }
 
   async getAllOrganizationAdmins(
