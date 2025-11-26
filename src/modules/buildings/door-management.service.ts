@@ -210,7 +210,7 @@ export class DoorManagementService {
     }
   }
 
-  private async countDoorsBetweenZones(
+  async countDoorsBetweenZones(
     zoneFromId: number,
     zoneToId: number,
     floorId: number,
@@ -231,5 +231,9 @@ export class DoorManagementService {
           (door.zone_from.zone_id === zoneToId &&
             door.zone_to.zone_id === zoneFromId)),
     ).length;
+  }
+
+  async deleteDoor(doorId: number): Promise<void> {
+    await this.doorRepository.delete(doorId);
   }
 }

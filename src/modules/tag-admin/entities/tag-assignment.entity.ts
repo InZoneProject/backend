@@ -22,7 +22,7 @@ export class TagAssignment {
   created_at: Date;
 
   @ManyToOne(() => Employee, (employee) => employee.tag_assignments, {
-    onDelete: 'SET NULL',
+    onDelete: 'CASCADE',
   })
   @JoinColumn({ name: 'employee_id' })
   employee: Employee;
@@ -37,5 +37,5 @@ export class TagAssignment {
     onDelete: 'SET NULL',
   })
   @JoinColumn({ name: 'rfid_tag_id' })
-  rfid_tag: RfidTag;
+  rfid_tag: RfidTag | null;
 }

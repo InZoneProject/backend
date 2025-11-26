@@ -12,8 +12,6 @@ export const BUILDINGS_CONSTANTS = {
     BUILDING_NOT_FOUND: 'Building not found',
     FLOOR_NOT_FOUND: 'Floor not found in this building',
     ZONE_NOT_FOUND: 'Zone not found',
-    CANNOT_REPLACE_FIRST_FLOOR:
-      'Cannot insert floor at position 1, first floor cannot be replaced',
     NO_INTERSECTION: 'Zone does not touch adjacent zone',
     INSUFFICIENT_INTERSECTION:
       'Zone must intersect with adjacent zone by at least 2 units',
@@ -41,6 +39,28 @@ export const BUILDINGS_CONSTANTS = {
       'At least one parameter (width, height, x_coordinate, y_coordinate) must be provided',
     ENTRANCE_DOOR_FLOOR_MISMATCH:
       'Non-transition zones can only have entrance doors on the floor they belong to',
+    FLOOR_NUMBER_TOO_HIGH_FOR_CREATE: (maxFloorNumber: number) =>
+      `Floor number cannot be greater than ${maxFloorNumber + 1}`,
+    FLOOR_NUMBER_TOO_HIGH_FOR_REORDER: (maxFloorNumber: number) =>
+      `Floor number cannot be greater than ${maxFloorNumber}`,
+    CANNOT_DELETE_LAST_FLOOR: 'Cannot delete the last remaining floor',
+    FLOOR_ALREADY_AT_POSITION: 'Floor is already at this position',
+    CANNOT_DELETE_LAST_ENTRANCE_DOOR:
+      'Cannot delete the last entrance door in the building',
+    CANNOT_DELETE_LAST_DOOR_BETWEEN_ZONES:
+      'Cannot delete the last door between these zones',
+    DOOR_NOT_FOUND: 'Door not found',
+    CANNOT_DELETE_FLOOR_WITH_LAST_ENTRANCE_DOOR:
+      'Cannot delete floor: it contains the last entrance door in the building',
+    CANNOT_DELETE_FLOOR_WOULD_DISCONNECT_TRANSITION_ZONE: (zoneTitle: string) =>
+      `Cannot delete floor: transition zone "${zoneTitle}" would lose all connections to other zones`,
+    CANNOT_DELETE_ZONE_WITH_LAST_ENTRANCE_DOOR:
+      'Cannot delete zone: it contains the last entrance door in the building',
+    CANNOT_DELETE_ZONE_WOULD_DISCONNECT_ZONES: (
+      zone1Title: string,
+      zone2Title: string,
+    ) =>
+      `Cannot delete zone: zones "${zone1Title}" and "${zone2Title}" would lose all connections`,
     COORDINATE_SIZE_MISMATCH_X: (
       deltaX: number,
       requiredWidthChange: number,
@@ -71,5 +91,11 @@ export const BUILDINGS_CONSTANTS = {
       requiredSpace: number,
     ) =>
       `Insufficient space for entrance doors: ${freeSpace} units available on ${doorSide} side of "${zoneTitle}", but ${doorsCount} door(s) require ${requiredSpace} units`,
+    DOOR_ALREADY_HAS_READER: 'Door already has an RFID reader assigned',
+    RFID_READER_NOT_FOUND: 'RFID reader not found',
+    READER_ORGANIZATION_MISMATCH:
+      'RFID reader belongs to a different organization',
+    READER_ALREADY_ASSIGNED: 'RFID reader is already assigned to another door',
+    DOOR_HAS_NO_READER: 'Door does not have an RFID reader assigned',
   },
 } as const;

@@ -3,14 +3,11 @@ import {
   CreateDateColumn,
   Entity,
   JoinColumn,
-  JoinTable,
-  ManyToMany,
   ManyToOne,
   OneToMany,
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { Door } from './door.entity';
-import { ZoneAccessRule } from '../../access-control/entities/zone-access-rule.entity';
 import { Floor } from './floor.entity';
 import { Building } from './building.entity';
 import { COLUMN_LENGTHS } from '../../../shared/constants/column-lengths';
@@ -50,10 +47,6 @@ export class Zone {
 
   @OneToMany(() => Door, (door) => door.zone_to)
   incoming_doors: Door[];
-
-  @ManyToMany(() => ZoneAccessRule)
-  @JoinTable()
-  zone_access_rules: ZoneAccessRule[];
 
   @ManyToOne(() => Floor, (floor) => floor.zones, {
     onDelete: 'CASCADE',

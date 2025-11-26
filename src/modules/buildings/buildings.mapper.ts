@@ -9,6 +9,11 @@ import { CreateDoorResponse } from './dto/create-door-response.dto';
 import { UpdateZoneTitleResponse } from './dto/update-zone-title-response.dto';
 import { UpdateZonePhotoResponse } from './dto/update-zone-photo-response.dto';
 import { UpdateZoneGeometryResponse } from './dto/update-zone-geometry-response.dto';
+import { BuildingInfoResponseDto } from './dto/building-info-response.dto';
+import { BuildingMapResponseDto } from './dto/building-map-response.dto';
+import { ZoneMapDto } from './dto/zone-map.dto';
+import { DoorMapDto } from './dto/door-map.dto';
+import { FloorMapDto } from './dto/floor-map.dto';
 import { BUILDINGS_CONSTANTS } from './buildings.constants';
 
 export class BuildingsMapper {
@@ -93,6 +98,56 @@ export class BuildingsMapper {
       height: zone.height,
       x_coordinate: zone.x_coordinate,
       y_coordinate: zone.y_coordinate,
+    };
+  }
+
+  static toBuildingInfoResponse(building: Building): BuildingInfoResponseDto {
+    return {
+      building_id: building.building_id,
+      title: building.title,
+      address: building.address,
+    };
+  }
+
+  static toBuildingMapResponse(
+    building: Building,
+    floors: Floor[],
+    zones: Zone[],
+    doors: Door[],
+  ): BuildingMapResponseDto {
+    return {
+      building_id: building.building_id,
+      title: building.title,
+      address: building.address,
+      floors: floors.map(
+        (floor): FloorMapDto => ({
+          floor_id: floor.floor_id,
+          floor_number: floor.floor_number,
+        }),
+      ),
+      zones: zones.map(
+        (zone): ZoneMapDto => ({
+          zone_id: zone.zone_id,
+          title: zone.title,
+          is_transition_between_floors: zone.is_transition_between_floors,
+          width: zone.width,
+          height: zone.height,
+          photo: zone.photo,
+          x_coordinate: zone.x_coordinate,
+          y_coordinate: zone.y_coordinate,
+          floor_id: zone.floor?.floor_id ?? null,
+        }),
+      ),
+      doors: doors.map(
+        (door): DoorMapDto => ({
+          door_id: door.door_id,
+          is_entrance: door.is_entrance,
+          entrance_door_side: door.entrance_door_side,
+          zone_from_id: door.zone_from?.zone_id ?? null,
+          zone_to_id: door.zone_to.zone_id,
+          floor_id: door.floor.floor_id,
+        }),
+      ),
     };
   }
 }

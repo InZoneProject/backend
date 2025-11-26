@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TokenService } from './services/token.service';
 import { InviteTokenService } from './services/invite-token.service';
+import { FileService } from './services/file.service';
 import { OrganizationOwnershipValidator } from './validators/organization-ownership.validator';
 import { FileValidator } from './validators/file.validator';
 import { InviteToken } from '../modules/global-admin/entities/invite-token.entity';
@@ -27,12 +28,14 @@ import { Organization } from '../modules/organizations/entities/organization.ent
   providers: [
     TokenService,
     InviteTokenService,
+    FileService,
     OrganizationOwnershipValidator,
     FileValidator,
   ],
   exports: [
     TokenService,
     InviteTokenService,
+    FileService,
     OrganizationOwnershipValidator,
     FileValidator,
   ],

@@ -2,10 +2,13 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  JoinColumn,
+  ManyToOne,
   OneToMany,
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { ScanEvent } from './scan-event.entity';
+import { Organization } from '../../organizations/entities/organization.entity';
 import { COLUMN_LENGTHS } from '../../../shared/constants/column-lengths';
 
 @Entity()
@@ -21,4 +24,10 @@ export class RfidReader {
 
   @OneToMany(() => ScanEvent, (scan_event) => scan_event.rfid_reader)
   scan_events: ScanEvent[];
+
+  @ManyToOne(() => Organization, (organization) => organization.rfid_readers, {
+    onDelete: 'CASCADE',
+  })
+  @JoinColumn({ name: 'organization_id' })
+  organization: Organization;
 }

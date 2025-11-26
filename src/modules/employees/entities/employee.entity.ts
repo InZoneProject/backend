@@ -2,10 +2,8 @@ import {
   Column,
   CreateDateColumn,
   Entity,
-  JoinColumn,
   JoinTable,
   ManyToMany,
-  ManyToOne,
   OneToMany,
   PrimaryGeneratedColumn,
 } from 'typeorm';
@@ -56,9 +54,7 @@ export class Employee {
   @JoinTable()
   positions: Position[];
 
-  @ManyToOne(() => Organization, (organization) => organization.employees, {
-    onDelete: 'SET NULL',
-  })
-  @JoinColumn({ name: 'organization_id' })
-  organization: Organization;
+  @ManyToMany(() => Organization, (organization) => organization.employees)
+  @JoinTable()
+  organizations: Organization[];
 }

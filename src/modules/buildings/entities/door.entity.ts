@@ -32,9 +32,10 @@ export class Door {
 
   @OneToOne(() => RfidReader, {
     onDelete: 'SET NULL',
+    nullable: true,
   })
   @JoinColumn()
-  rfid_reader: RfidReader;
+  rfid_reader: RfidReader | null;
 
   @ManyToOne(() => Zone, (zone_from) => zone_from.outgoing_doors, {
     onDelete: 'CASCADE',

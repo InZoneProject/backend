@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ConflictException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, EntityManager } from 'typeorm';
@@ -9,10 +10,12 @@ import { Zone } from './entities/zone.entity';
 import { Door } from './entities/door.entity';
 import { Building } from './entities/building.entity';
 import { Floor } from './entities/floor.entity';
+import { RfidReader } from '../rfid/entities/rfid-reader.entity';
 import { CreateZoneDto } from './dto/create-zone.dto';
 import { CreateBuildingDto } from './dto/create-building.dto';
 import { CreateFloorDto } from './dto/create-floor.dto';
 import { UpdateZoneGeometryDto } from './dto/update-zone-geometry.dto';
+import { UpdateBuildingDto } from './dto/update-building.dto';
 import { ZoneGeometryValidator } from './zone-geometry.validator';
 import { ZoneGeometryService } from './zone-geometry.service';
 import { DoorManagementService } from './door-management.service';
@@ -81,6 +84,19 @@ export class BuildingsService {
       userId,
       building.organization.organization_id,
     );
+
+    const maxFloorNumber =
+      building.floors.length > 0
+        ? Math.max(...building.floors.map((f) => f.floor_number))
+        : 0;
+
+    if (createFloorDto.floor_number > maxFloorNumber + 1) {
+      throw new BadRequestException(
+        BUILDINGS_CONSTANTS.ERROR_MESSAGES.FLOOR_NUMBER_TOO_HIGH_FOR_CREATE(
+          maxFloorNumber,
+        ),
+      );
+    }
 
     return this.dataSource.transaction(async (manager) => {
       await this.shiftFloorNumbers(
@@ -236,6 +252,228 @@ export class BuildingsService {
       zoneToId,
       floorId,
     );
+  }
+
+  async getBuildingInfo(userId: number, buildingId: number): Promise<Building> {
+    const building = await this.buildingRepository.findOne({
+      where: { building_id: buildingId },
+      relations: ['organization'],
+    });
+
+    if (!building) {
+      throw new NotFoundException(
+        BUILDINGS_CONSTANTS.ERROR_MESSAGES.BUILDING_NOT_FOUND,
+      );
+    }
+
+    await this.organizationOwnershipValidator.validateOwnership(
+      userId,
+      building.organization.organization_id,
+    );
+
+    return building;
+  }
+
+  async updateBuilding(
+    userId: number,
+    buildingId: number,
+    updateBuildingDto: UpdateBuildingDto,
+  ): Promise<Building> {
+    const building = await this.buildingRepository.findOne({
+      where: { building_id: buildingId },
+      relations: ['organization'],
+    });
+
+    if (!building) {
+      throw new NotFoundException(
+        BUILDINGS_CONSTANTS.ERROR_MESSAGES.BUILDING_NOT_FOUND,
+      );
+    }
+
+    await this.organizationOwnershipValidator.validateOwnership(
+      userId,
+      building.organization.organization_id,
+    );
+
+    if (updateBuildingDto.title !== undefined) {
+      building.title = updateBuildingDto.title;
+    }
+
+    if (updateBuildingDto.address !== undefined) {
+      building.address = updateBuildingDto.address;
+    }
+
+    return this.buildingRepository.save(building);
+  }
+
+  async deleteFloor(userId: number, floorId: number): Promise<void> {
+    const floor = await this.floorRepository.findOne({
+      where: { floor_id: floorId },
+      relations: ['building', 'building.organization', 'building.floors'],
+    });
+
+    if (!floor) {
+      throw new NotFoundException(
+        BUILDINGS_CONSTANTS.ERROR_MESSAGES.FLOOR_NOT_FOUND,
+      );
+    }
+
+    await this.organizationOwnershipValidator.validateOwnership(
+      userId,
+      floor.building.organization.organization_id,
+    );
+
+    if (floor.building.floors.length === 1) {
+      throw new BadRequestException(
+        BUILDINGS_CONSTANTS.ERROR_MESSAGES.CANNOT_DELETE_LAST_FLOOR,
+      );
+    }
+
+    const buildingId = floor.building.building_id;
+    await this.validateFloorDeletion(floorId, buildingId);
+
+    await this.dataSource.transaction(async (manager) => {
+      await manager.delete(Floor, floorId);
+
+      const remainingFloors = floor.building.floors
+        .filter((f) => f.floor_id !== floorId)
+        .sort((a, b) => a.floor_number - b.floor_number);
+
+      for (let i = 0; i < remainingFloors.length; i++) {
+        await manager.update(Floor, remainingFloors[i].floor_id, {
+          floor_number: i + 1,
+        });
+      }
+    });
+  }
+
+  async reorderFloor(
+    userId: number,
+    floorId: number,
+    newFloorNumber: number,
+  ): Promise<void> {
+    const floor = await this.floorRepository.findOne({
+      where: { floor_id: floorId },
+      relations: ['building', 'building.organization', 'building.floors'],
+    });
+
+    if (!floor) {
+      throw new NotFoundException(
+        BUILDINGS_CONSTANTS.ERROR_MESSAGES.FLOOR_NOT_FOUND,
+      );
+    }
+
+    await this.organizationOwnershipValidator.validateOwnership(
+      userId,
+      floor.building.organization.organization_id,
+    );
+
+    if (floor.floor_number === newFloorNumber) {
+      throw new BadRequestException(
+        BUILDINGS_CONSTANTS.ERROR_MESSAGES.FLOOR_ALREADY_AT_POSITION,
+      );
+    }
+
+    const maxFloorNumber = Math.max(
+      ...floor.building.floors.map((f) => f.floor_number),
+    );
+
+    if (newFloorNumber > maxFloorNumber) {
+      throw new BadRequestException(
+        BUILDINGS_CONSTANTS.ERROR_MESSAGES.FLOOR_NUMBER_TOO_HIGH_FOR_REORDER(
+          maxFloorNumber,
+        ),
+      );
+    }
+
+    await this.dataSource.transaction(async (manager) => {
+      const oldFloorNumber = floor.floor_number;
+
+      if (newFloorNumber < oldFloorNumber) {
+        const floorsToShift = floor.building.floors.filter(
+          (f) =>
+            f.floor_number >= newFloorNumber && f.floor_number < oldFloorNumber,
+        );
+
+        for (const floorToShift of floorsToShift) {
+          await manager.update(Floor, floorToShift.floor_id, {
+            floor_number: floorToShift.floor_number + 1,
+          });
+        }
+      } else {
+        const floorsToShift = floor.building.floors.filter(
+          (f) =>
+            f.floor_number > oldFloorNumber && f.floor_number <= newFloorNumber,
+        );
+
+        for (const floorToShift of floorsToShift) {
+          await manager.update(Floor, floorToShift.floor_id, {
+            floor_number: floorToShift.floor_number - 1,
+          });
+        }
+      }
+
+      await manager.update(Floor, floorId, {
+        floor_number: newFloorNumber,
+      });
+    });
+  }
+
+  async deleteEntranceDoor(userId: number, doorId: number): Promise<void> {
+    const door = await this.findDoorWithRelations(doorId);
+
+    if (!door.is_entrance) {
+      throw new BadRequestException(
+        BUILDINGS_CONSTANTS.ERROR_MESSAGES.DOOR_NOT_FOUND,
+      );
+    }
+
+    await this.organizationOwnershipValidator.validateOwnership(
+      userId,
+      door.zone_to.building.organization.organization_id,
+    );
+
+    const buildingId = door.zone_to.building.building_id;
+
+    const totalEntranceDoors =
+      await this.countEntranceDoorsInBuilding(buildingId);
+
+    if (totalEntranceDoors === 1) {
+      throw new BadRequestException(
+        BUILDINGS_CONSTANTS.ERROR_MESSAGES.CANNOT_DELETE_LAST_ENTRANCE_DOOR,
+      );
+    }
+
+    await this.doorManagementService.deleteDoor(doorId);
+  }
+
+  async deleteRegularDoor(userId: number, doorId: number): Promise<void> {
+    const door = await this.findDoorWithRelations(doorId);
+
+    if (door.is_entrance || !door.zone_from) {
+      throw new BadRequestException(
+        BUILDINGS_CONSTANTS.ERROR_MESSAGES.DOOR_NOT_FOUND,
+      );
+    }
+
+    await this.organizationOwnershipValidator.validateOwnership(
+      userId,
+      door.zone_to.building.organization.organization_id,
+    );
+
+    const doorsCount = await this.doorManagementService.countDoorsBetweenZones(
+      door.zone_from.zone_id,
+      door.zone_to.zone_id,
+      door.floor.floor_id,
+    );
+
+    if (doorsCount === 1) {
+      throw new BadRequestException(
+        BUILDINGS_CONSTANTS.ERROR_MESSAGES.CANNOT_DELETE_LAST_DOOR_BETWEEN_ZONES,
+      );
+    }
+
+    await this.doorManagementService.deleteDoor(doorId);
   }
 
   private async createBuildingEntity(
@@ -725,6 +963,342 @@ export class BuildingsService {
     return manager.save(entranceDoor);
   }
 
+  private async findDoorWithRelations(doorId: number): Promise<Door> {
+    const doorRepository = this.dataSource.getRepository(Door);
+    const door = await doorRepository.findOne({
+      where: { door_id: doorId },
+      relations: [
+        'zone_to',
+        'zone_to.building',
+        'zone_to.building.organization',
+        'zone_from',
+        'floor',
+      ],
+    });
+
+    if (!door) {
+      throw new NotFoundException(
+        BUILDINGS_CONSTANTS.ERROR_MESSAGES.DOOR_NOT_FOUND,
+      );
+    }
+
+    return door;
+  }
+
+  private async countEntranceDoorsInBuilding(
+    buildingId: number,
+  ): Promise<number> {
+    const doorRepository = this.dataSource.getRepository(Door);
+    return doorRepository.count({
+      where: {
+        is_entrance: true,
+        zone_to: { building: { building_id: buildingId } },
+      },
+    });
+  }
+
+  private async validateFloorDeletion(
+    floorId: number,
+    buildingId: number,
+  ): Promise<void> {
+    const doorRepository = this.dataSource.getRepository(Door);
+
+    const entranceDoorsOnFloor = await doorRepository.count({
+      where: {
+        floor: { floor_id: floorId },
+        is_entrance: true,
+      },
+    });
+
+    if (entranceDoorsOnFloor > 0) {
+      const totalEntranceDoors =
+        await this.countEntranceDoorsInBuilding(buildingId);
+
+      if (entranceDoorsOnFloor === totalEntranceDoors) {
+        throw new BadRequestException(
+          BUILDINGS_CONSTANTS.ERROR_MESSAGES.CANNOT_DELETE_FLOOR_WITH_LAST_ENTRANCE_DOOR,
+        );
+      }
+    }
+
+    const transitionZones = await this.zoneRepository.find({
+      where: {
+        building: { building_id: buildingId },
+        is_transition_between_floors: true,
+      },
+    });
+
+    for (const transitionZone of transitionZones) {
+      const doorsOnThisFloor = await doorRepository.count({
+        where: [
+          {
+            zone_from: { zone_id: transitionZone.zone_id },
+            floor: { floor_id: floorId },
+          },
+          {
+            zone_to: { zone_id: transitionZone.zone_id },
+            floor: { floor_id: floorId },
+          },
+        ],
+      });
+
+      if (doorsOnThisFloor > 0) {
+        const totalDoorsForTransitionZone = await doorRepository.count({
+          where: [
+            {
+              zone_from: { zone_id: transitionZone.zone_id },
+              is_entrance: false,
+            },
+            {
+              zone_to: { zone_id: transitionZone.zone_id },
+              is_entrance: false,
+            },
+          ],
+        });
+
+        if (doorsOnThisFloor === totalDoorsForTransitionZone) {
+          throw new BadRequestException(
+            BUILDINGS_CONSTANTS.ERROR_MESSAGES.CANNOT_DELETE_FLOOR_WOULD_DISCONNECT_TRANSITION_ZONE(
+              transitionZone.title,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  async getBuildingMap(userId: number, buildingId: number) {
+    const building = await this.buildingRepository.findOne({
+      where: { building_id: buildingId },
+      relations: ['organization', 'floors', 'zones', 'zones.floor'],
+    });
+
+    if (!building) {
+      throw new NotFoundException(
+        BUILDINGS_CONSTANTS.ERROR_MESSAGES.BUILDING_NOT_FOUND,
+      );
+    }
+
+    await this.organizationOwnershipValidator.validateOwnership(
+      userId,
+      building.organization.organization_id,
+    );
+
+    const doorRepository = this.dataSource.getRepository(Door);
+    const doors = await doorRepository.find({
+      where: { floor: { building: { building_id: buildingId } } },
+      relations: ['zone_from', 'zone_to', 'floor'],
+    });
+
+    return { building, floors: building.floors, zones: building.zones, doors };
+  }
+
+  async deleteZone(userId: number, zoneId: number): Promise<void> {
+    const zone = await this.zoneRepository.findOne({
+      where: { zone_id: zoneId },
+      relations: ['building', 'building.organization'],
+    });
+
+    if (!zone) {
+      throw new NotFoundException(
+        BUILDINGS_CONSTANTS.ERROR_MESSAGES.ZONE_NOT_FOUND,
+      );
+    }
+
+    await this.organizationOwnershipValidator.validateOwnership(
+      userId,
+      zone.building.organization.organization_id,
+    );
+
+    const buildingId = zone.building.building_id;
+    await this.validateZoneDeletion(zoneId, buildingId);
+
+    if (zone.photo) {
+      await this.deletePhotoFile(zone.photo);
+    }
+
+    await this.zoneRepository.delete(zoneId);
+  }
+
+  private async validateZoneDeletion(
+    zoneId: number,
+    buildingId: number,
+  ): Promise<void> {
+    const doorRepository = this.dataSource.getRepository(Door);
+
+    const entranceDoorsInZone = await doorRepository.count({
+      where: {
+        zone_to: { zone_id: zoneId },
+        is_entrance: true,
+      },
+    });
+
+    if (entranceDoorsInZone > 0) {
+      const totalEntranceDoors =
+        await this.countEntranceDoorsInBuilding(buildingId);
+
+      if (entranceDoorsInZone === totalEntranceDoors) {
+        throw new BadRequestException(
+          BUILDINGS_CONSTANTS.ERROR_MESSAGES.CANNOT_DELETE_ZONE_WITH_LAST_ENTRANCE_DOOR,
+        );
+      }
+    }
+
+    const connectedDoors = await doorRepository.find({
+      where: [
+        { zone_from: { zone_id: zoneId }, is_entrance: false },
+        { zone_to: { zone_id: zoneId }, is_entrance: false },
+      ],
+      relations: ['zone_from', 'zone_to', 'floor'],
+    });
+
+    const adjacentZonesByFloor = new Map<number, Set<number>>();
+
+    for (const door of connectedDoors) {
+      const otherZoneId =
+        door.zone_from?.zone_id === zoneId
+          ? door.zone_to.zone_id
+          : door.zone_from!.zone_id;
+
+      if (!adjacentZonesByFloor.has(door.floor.floor_id)) {
+        adjacentZonesByFloor.set(door.floor.floor_id, new Set());
+      }
+      adjacentZonesByFloor.get(door.floor.floor_id)!.add(otherZoneId);
+    }
+
+    for (const [floorId, adjacentZones] of adjacentZonesByFloor) {
+      const adjacentZoneIds = Array.from(adjacentZones);
+
+      for (let i = 0; i < adjacentZoneIds.length; i++) {
+        for (let j = i + 1; j < adjacentZoneIds.length; j++) {
+          const zone1Id = adjacentZoneIds[i];
+          const zone2Id = adjacentZoneIds[j];
+
+          const doorsCount =
+            await this.doorManagementService.countDoorsBetweenZones(
+              zone1Id,
+              zone2Id,
+              floorId,
+            );
+
+          if (doorsCount === 0) {
+            const zone1 = await this.zoneRepository.findOne({
+              where: { zone_id: zone1Id },
+            });
+            const zone2 = await this.zoneRepository.findOne({
+              where: { zone_id: zone2Id },
+            });
+
+            throw new BadRequestException(
+              BUILDINGS_CONSTANTS.ERROR_MESSAGES.CANNOT_DELETE_ZONE_WOULD_DISCONNECT_ZONES(
+                zone1!.title,
+                zone2!.title,
+              ),
+            );
+          }
+        }
+      }
+    }
+  }
+
+  async assignReaderToDoor(
+    userId: number,
+    doorId: number,
+    rfidReaderId: number,
+  ): Promise<void> {
+    const door = await this.dataSource.getRepository(Door).findOne({
+      where: { door_id: doorId },
+      relations: [
+        'zone_to',
+        'zone_to.building',
+        'zone_to.building.organization',
+        'rfid_reader',
+      ],
+    });
+
+    if (!door) {
+      throw new NotFoundException(
+        BUILDINGS_CONSTANTS.ERROR_MESSAGES.DOOR_NOT_FOUND,
+      );
+    }
+
+    await this.organizationOwnershipValidator.validateOwnership(
+      userId,
+      door.zone_to.building.organization.organization_id,
+    );
+
+    if (door.rfid_reader) {
+      throw new ConflictException(
+        BUILDINGS_CONSTANTS.ERROR_MESSAGES.DOOR_ALREADY_HAS_READER,
+      );
+    }
+
+    const reader = await this.dataSource.getRepository(RfidReader).findOne({
+      where: { rfid_reader_id: rfidReaderId },
+      relations: ['organization'],
+    });
+
+    if (!reader) {
+      throw new NotFoundException(
+        BUILDINGS_CONSTANTS.ERROR_MESSAGES.RFID_READER_NOT_FOUND,
+      );
+    }
+
+    if (
+      reader.organization.organization_id !==
+      door.zone_to.building.organization.organization_id
+    ) {
+      throw new BadRequestException(
+        BUILDINGS_CONSTANTS.ERROR_MESSAGES.READER_ORGANIZATION_MISMATCH,
+      );
+    }
+
+    const existingDoor = await this.dataSource.getRepository(Door).findOne({
+      where: { rfid_reader: { rfid_reader_id: rfidReaderId } },
+    });
+
+    if (existingDoor) {
+      throw new ConflictException(
+        BUILDINGS_CONSTANTS.ERROR_MESSAGES.READER_ALREADY_ASSIGNED,
+      );
+    }
+
+    door.rfid_reader = reader;
+    await this.dataSource.getRepository(Door).save(door);
+  }
+
+  async removeReaderFromDoor(userId: number, doorId: number): Promise<void> {
+    const door = await this.dataSource.getRepository(Door).findOne({
+      where: { door_id: doorId },
+      relations: [
+        'zone_to',
+        'zone_to.building',
+        'zone_to.building.organization',
+        'rfid_reader',
+      ],
+    });
+
+    if (!door) {
+      throw new NotFoundException(
+        BUILDINGS_CONSTANTS.ERROR_MESSAGES.DOOR_NOT_FOUND,
+      );
+    }
+
+    await this.organizationOwnershipValidator.validateOwnership(
+      userId,
+      door.zone_to.building.organization.organization_id,
+    );
+
+    if (!door.rfid_reader) {
+      throw new NotFoundException(
+        BUILDINGS_CONSTANTS.ERROR_MESSAGES.DOOR_HAS_NO_READER,
+      );
+    }
+
+    door.rfid_reader = null;
+    await this.dataSource.getRepository(Door).save(door);
+  }
+
   private async deletePhotoFile(photoPath: string): Promise<void> {
     const fs = await import('fs/promises');
     try {
@@ -735,5 +1309,25 @@ export class BuildingsService {
         error,
       );
     }
+  }
+
+  async deleteBuilding(userId: number, buildingId: number): Promise<void> {
+    const building = await this.buildingRepository.findOne({
+      where: { building_id: buildingId },
+      relations: ['organization'],
+    });
+
+    if (!building) {
+      throw new NotFoundException(
+        BUILDINGS_CONSTANTS.ERROR_MESSAGES.BUILDING_NOT_FOUND,
+      );
+    }
+
+    await this.organizationOwnershipValidator.validateOwnership(
+      userId,
+      building.organization.organization_id,
+    );
+
+    await this.buildingRepository.remove(building);
   }
 }

@@ -7,6 +7,7 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { Employee } from '../../employees/entities/employee.entity';
+import { Organization } from '../../organizations/entities/organization.entity';
 import { COLUMN_LENGTHS } from '../../../shared/constants/column-lengths';
 
 @Entity()
@@ -21,7 +22,10 @@ export class Notification {
   message: string;
 
   @Column({ default: false })
-  is_read: boolean;
+  is_read_by_employee: boolean;
+
+  @Column({ default: false })
+  is_read_by_org_admin: boolean;
 
   @CreateDateColumn()
   created_at: Date;
@@ -31,4 +35,8 @@ export class Notification {
   })
   @JoinColumn({ name: 'employee_id' })
   employee: Employee;
+
+  @ManyToOne(() => Organization, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'organization_id' })
+  organization: Organization;
 }

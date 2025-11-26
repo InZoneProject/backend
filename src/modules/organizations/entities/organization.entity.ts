@@ -3,6 +3,7 @@ import {
   CreateDateColumn,
   Entity,
   JoinColumn,
+  ManyToMany,
   ManyToOne,
   OneToMany,
   PrimaryGeneratedColumn,
@@ -10,10 +11,12 @@ import {
 import { Position } from './position.entity';
 import { Employee } from '../../employees/entities/employee.entity';
 import { RfidTag } from '../../rfid/entities/rfid-tag.entity';
+import { RfidReader } from '../../rfid/entities/rfid-reader.entity';
 import { OrganizationAdmin } from './organization-admin.entity';
 import { Building } from '../../buildings/entities/building.entity';
 import { TagAdmin } from '../../tag-admin/entities/tag-admin.entity';
 import { COLUMN_LENGTHS } from '../../../shared/constants/column-lengths';
+import { ZoneAccessRule } from '../../access-control/entities/zone-access-rule.entity';
 
 @Entity()
 export class Organization {
@@ -34,13 +37,18 @@ export class Organization {
   })
   positions: Position[];
 
-  @OneToMany(() => Employee, (employee) => employee.organization)
+  @ManyToMany(() => Employee, (employee) => employee.organizations)
   employees: Employee[];
 
   @OneToMany(() => RfidTag, (rfid_tag) => rfid_tag.organization, {
     cascade: true,
   })
   rfid_tags: RfidTag[];
+
+  @OneToMany(() => RfidReader, (rfid_reader) => rfid_reader.organization, {
+    cascade: true,
+  })
+  rfid_readers: RfidReader[];
 
   @ManyToOne(
     () => OrganizationAdmin,
@@ -59,4 +67,10 @@ export class Organization {
 
   @OneToMany(() => TagAdmin, (tag_admin) => tag_admin.organization)
   tag_admins: TagAdmin[];
+
+  @OneToMany(
+    () => ZoneAccessRule,
+    (zone_access_rule) => zone_access_rule.organization,
+  )
+  zone_access_rules: ZoneAccessRule[];
 }

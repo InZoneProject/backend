@@ -7,8 +7,12 @@ import {
   Param,
   ParseIntPipe,
   Patch,
+  Delete,
   UseInterceptors,
   UploadedFile,
+  Get,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiConsumes, ApiBody } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -20,6 +24,9 @@ import { CreateFloorDto } from './dto/create-floor.dto';
 import { CreateEntranceDoorDto } from './dto/create-entrance-door.dto';
 import { CreateDoorDto } from './dto/create-door.dto';
 import { UpdateZoneTitleDto } from './dto/update-zone-title.dto';
+import { ReorderFloorDto } from './dto/reorder-floor.dto';
+import { UpdateBuildingDto } from './dto/update-building.dto';
+import { AssignReaderToDoorDto } from './dto/assign-reader-to-door.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { EmailVerificationGuard } from '../auth/guards/email-verification.guard';
@@ -54,6 +61,47 @@ export class BuildingsController {
       floor,
       zone,
       door,
+    );
+  }
+
+  @Get(':id')
+  async getBuildingInfo(
+    @Param('id', ParseIntPipe) buildingId: number,
+    @Req() req: RequestWithUser,
+  ) {
+    const building = await this.buildingsService.getBuildingInfo(
+      req.user.sub,
+      buildingId,
+    );
+    return BuildingsMapper.toBuildingInfoResponse(building);
+  }
+
+  @Patch(':id')
+  async updateBuilding(
+    @Param('id', ParseIntPipe) buildingId: number,
+    @Body() updateBuildingDto: UpdateBuildingDto,
+    @Req() req: RequestWithUser,
+  ) {
+    const building = await this.buildingsService.updateBuilding(
+      req.user.sub,
+      buildingId,
+      updateBuildingDto,
+    );
+    return BuildingsMapper.toBuildingInfoResponse(building);
+  }
+
+  @Get(':id/map')
+  async getBuildingMap(
+    @Param('id', ParseIntPipe) buildingId: number,
+    @Req() req: RequestWithUser,
+  ) {
+    const { building, floors, zones, doors } =
+      await this.buildingsService.getBuildingMap(req.user.sub, buildingId);
+    return BuildingsMapper.toBuildingMapResponse(
+      building,
+      floors,
+      zones,
+      doors,
     );
   }
 
@@ -158,5 +206,83 @@ export class BuildingsController {
       updateZoneGeometryDto,
     );
     return BuildingsMapper.toUpdateZoneGeometryResponse(zone);
+  }
+
+  @Patch('floors/:id/reorder')
+  async reorderFloor(
+    @Param('id', ParseIntPipe) floorId: number,
+    @Body() reorderFloorDto: ReorderFloorDto,
+    @Req() req: RequestWithUser,
+  ) {
+    await this.buildingsService.reorderFloor(
+      req.user.sub,
+      floorId,
+      reorderFloorDto.new_floor_number,
+    );
+  }
+
+  @Delete('floors/:id')
+  async deleteFloor(
+    @Param('id', ParseIntPipe) floorId: number,
+    @Req() req: RequestWithUser,
+  ) {
+    await this.buildingsService.deleteFloor(req.user.sub, floorId);
+  }
+
+  @Delete('entrance-doors/:id')
+  async deleteEntranceDoor(
+    @Param('id', ParseIntPipe) doorId: number,
+    @Req() req: RequestWithUser,
+  ) {
+    await this.buildingsService.deleteEntranceDoor(req.user.sub, doorId);
+  }
+
+  @Delete('doors/:id')
+  async deleteRegularDoor(
+    @Param('id', ParseIntPipe) doorId: number,
+    @Req() req: RequestWithUser,
+  ) {
+    await this.buildingsService.deleteRegularDoor(req.user.sub, doorId);
+  }
+
+  @Delete('zones/:id')
+  async deleteZone(
+    @Param('id', ParseIntPipe) zoneId: number,
+    @Req() req: RequestWithUser,
+  ) {
+    await this.buildingsService.deleteZone(req.user.sub, zoneId);
+  }
+
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deleteBuilding(
+    @Param('id', ParseIntPipe) buildingId: number,
+    @Req() req: RequestWithUser,
+  ): Promise<void> {
+    await this.buildingsService.deleteBuilding(req.user.sub, buildingId);
+  }
+
+  @Post('doors/:doorId/reader')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiBody({ type: AssignReaderToDoorDto })
+  async assignReaderToDoor(
+    @Param('doorId', ParseIntPipe) doorId: number,
+    @Body() assignReaderDto: AssignReaderToDoorDto,
+    @Req() req: RequestWithUser,
+  ) {
+    await this.buildingsService.assignReaderToDoor(
+      req.user.sub,
+      doorId,
+      assignReaderDto.rfid_reader_id,
+    );
+  }
+
+  @Delete('doors/:doorId/reader')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async removeReaderFromDoor(
+    @Param('doorId', ParseIntPipe) doorId: number,
+    @Req() req: RequestWithUser,
+  ) {
+    await this.buildingsService.removeReaderFromDoor(req.user.sub, doorId);
   }
 }
