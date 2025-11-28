@@ -1,0 +1,30 @@
+export const REALTIME_CONSTANTS = {
+  EVENTS: {
+    ERROR: 'error',
+    SUCCESS: 'success',
+    SUBSCRIBE: 'subscribe',
+    UNSUBSCRIBE: 'unsubscribe',
+    NOTIFICATION_RECEIVED: 'notification.received',
+    SUBSCRIBE_BUILDING: 'subscribe_building',
+    UNSUBSCRIBE_BUILDING: 'unsubscribe_building',
+    EMPLOYEE_LOCATION: 'employee.location',
+  },
+  MESSAGES: {
+    ALREADY_SUBSCRIBED: 'Already subscribed',
+    NOT_SUBSCRIBED: 'Not subscribed',
+    INVALID_ROLE: 'Invalid role',
+    ACCESS_DENIED: 'Access denied',
+    INTERNAL_ERROR: 'Internal server error',
+    NO_TOKEN: 'No token provided',
+    JWT_SECRET_MISSING: 'JWT secret not configured',
+    SUBSCRIBED_NOTIFICATIONS: 'Subscribed to notifications',
+    UNSUBSCRIBED_NOTIFICATIONS: 'Unsubscribed from notifications',
+    BUILDING_ID_REQUIRED: 'building_id is required',
+    BUILDING_NOT_FOUND: 'Building not found',
+    ALREADY_SUBSCRIBED_BUILDING: 'Already subscribed to this building',
+    NOT_SUBSCRIBED_BUILDING: 'Not subscribed to this building',
+    SUBSCRIBED_TO_BUILDING: (id: number) => `Subscribed to building ${id}`,
+    UNSUBSCRIBED_FROM_BUILDING: (id: number) =>
+      `Unsubscribed from building ${id}`,
+  },
+} as const;

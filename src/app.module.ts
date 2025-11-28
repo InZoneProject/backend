@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { AuthModule } from './modules/auth';
 import { OrganizationsModule } from './modules/organizations/organizations.module';
 import { EmployeesModule } from './modules/employees/employees.module';
@@ -11,12 +12,16 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
 import { GlobalAdminModule } from './modules/global-admin/global-admin.module';
 import { TagAdminModule } from './modules/tag-admin/tag-admin.module';
 import { SharedModule } from './shared/shared.module';
+import { MqttModule } from './modules/mqtt/mqtt.module';
+import { RealtimeModule } from './modules/realtime/realtime.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
     }),
+
+    ScheduleModule.forRoot(),
 
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
@@ -43,6 +48,8 @@ import { SharedModule } from './shared/shared.module';
     NotificationsModule,
     GlobalAdminModule,
     TagAdminModule,
+    MqttModule,
+    RealtimeModule,
   ],
 })
 export class AppModule {}

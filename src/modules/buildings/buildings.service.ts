@@ -11,6 +11,7 @@ import { Door } from './entities/door.entity';
 import { Building } from './entities/building.entity';
 import { Floor } from './entities/floor.entity';
 import { RfidReader } from '../rfid/entities/rfid-reader.entity';
+import { ScanEvent } from '../rfid/entities/scan-event.entity';
 import { CreateZoneDto } from './dto/create-zone.dto';
 import { CreateBuildingDto } from './dto/create-building.dto';
 import { CreateFloorDto } from './dto/create-floor.dto';
@@ -1329,5 +1330,117 @@ export class BuildingsService {
     );
 
     await this.buildingRepository.remove(building);
+  }
+
+  async getCurrentEmployeeLocations(userId: number, buildingId: number) {
+    const building = await this.buildingRepository.findOne({
+      where: { building_id: buildingId },
+      relations: ['organization'],
+    });
+
+    if (!building) {
+      throw new NotFoundException(
+        BUILDINGS_CONSTANTS.ERROR_MESSAGES.BUILDING_NOT_FOUND,
+      );
+    }
+
+    await this.organizationOwnershipValidator.validateOwnership(
+      userId,
+      building.organization.organization_id,
+    );
+
+    const doorRepository = this.dataSource.getRepository(Door);
+    const scanEventRepository = this.dataSource.getRepository(ScanEvent);
+
+    const doors = await doorRepository.find({
+      where: {
+        floor: { building: { building_id: buildingId } },
+      },
+      relations: ['rfid_reader', 'zone_from', 'zone_to'],
+    });
+
+    if (doors.length === 0) {
+      return [];
+    }
+
+    const readerIds = doors
+      .map((door) => door.rfid_reader?.rfid_reader_id)
+      .filter((id): id is number => id !== undefined);
+
+    if (readerIds.length === 0) {
+      return [];
+    }
+
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+
+    const scans = await scanEventRepository
+      .createQueryBuilder('scan_event')
+      .leftJoinAndSelect('scan_event.rfid_tag', 'rfid_tag')
+      .leftJoinAndSelect('rfid_tag.tag_assignments', 'tag_assignment')
+      .leftJoinAndSelect('tag_assignment.employee', 'employee')
+      .leftJoinAndSelect('scan_event.rfid_reader', 'rfid_reader')
+      .where('rfid_reader.rfid_reader_id IN (:...readerIds)', { readerIds })
+      .andWhere('scan_event.created_at >= :startOfDay', { startOfDay })
+      .orderBy('scan_event.created_at', 'ASC')
+      .getMany();
+
+    const employeeScansMap = new Map<number, ScanEvent[]>();
+
+    for (const scan of scans) {
+      const assignment = scan.rfid_tag.tag_assignments[0];
+      if (!assignment || !assignment.employee) continue;
+
+      const empId = assignment.employee.employee_id;
+      const existingScans = employeeScansMap.get(empId);
+
+      if (existingScans) {
+        existingScans.push(scan);
+      } else {
+        employeeScansMap.set(empId, [scan]);
+      }
+    }
+
+    const employeeLocations = new Map<number, number | null>();
+    const doorMap = new Map(
+      doors.map((d) => [d.rfid_reader?.rfid_reader_id, d]),
+    );
+
+    for (const [employeeId, employeeScans] of employeeScansMap) {
+      let currentZoneId: number | null = null;
+
+      for (const scan of employeeScans) {
+        const door = doorMap.get(scan.rfid_reader.rfid_reader_id);
+        if (!door) continue;
+
+        const zoneFromId = door.zone_from?.zone_id ?? null;
+        const zoneToId = door.zone_to.zone_id;
+
+        if (zoneFromId === null) {
+          if (currentZoneId === zoneToId) {
+            currentZoneId = null;
+          } else {
+            currentZoneId = zoneToId;
+          }
+        } else {
+          if (currentZoneId === zoneToId) {
+            currentZoneId = zoneFromId;
+          } else if (currentZoneId === zoneFromId) {
+            currentZoneId = zoneToId;
+          } else {
+            currentZoneId = zoneToId;
+          }
+        }
+      }
+
+      employeeLocations.set(employeeId, currentZoneId);
+    }
+
+    return Array.from(employeeLocations.entries())
+      .filter(([, zone_id]) => zone_id !== null)
+      .map(([employee_id, zone_id]) => ({
+        employee_id,
+        zone_id,
+      }));
   }
 }

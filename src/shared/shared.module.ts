@@ -3,6 +3,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TokenService } from './services/token.service';
+import { TokenHashService } from './services/token-hash.service';
 import { InviteTokenService } from './services/invite-token.service';
 import { FileService } from './services/file.service';
 import { OrganizationOwnershipValidator } from './validators/organization-ownership.validator';
@@ -27,6 +28,7 @@ import { Organization } from '../modules/organizations/entities/organization.ent
   ],
   providers: [
     TokenService,
+    TokenHashService,
     InviteTokenService,
     FileService,
     OrganizationOwnershipValidator,
@@ -34,6 +36,7 @@ import { Organization } from '../modules/organizations/entities/organization.ent
   ],
   exports: [
     TokenService,
+    TokenHashService,
     InviteTokenService,
     FileService,
     OrganizationOwnershipValidator,

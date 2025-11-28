@@ -285,4 +285,15 @@ export class BuildingsController {
   ) {
     await this.buildingsService.removeReaderFromDoor(req.user.sub, doorId);
   }
+
+  @Get(':id/employees/current-locations')
+  async getCurrentEmployeeLocations(
+    @Param('id', ParseIntPipe) buildingId: number,
+    @Req() req: RequestWithUser,
+  ) {
+    return this.buildingsService.getCurrentEmployeeLocations(
+      req.user.sub,
+      buildingId,
+    );
+  }
 }

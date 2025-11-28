@@ -1,11 +1,11 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { randomBytes, createHash } from 'crypto';
 import { RfidReader } from './entities/rfid-reader.entity';
 import { RfidTag } from './entities/rfid-tag.entity';
 import { OrganizationIdDto } from '../../shared/dto/organization-id.dto';
 import { OrganizationOwnershipValidator } from '../../shared/validators/organization-ownership.validator';
+import { TokenHashService } from '../../shared/services/token-hash.service';
 import { RFID_CONSTANTS } from './rfid.constants';
 
 @Injectable()
@@ -16,6 +16,7 @@ export class RfidService {
     @InjectRepository(RfidTag)
     private readonly rfidTagRepository: Repository<RfidTag>,
     private readonly organizationOwnershipValidator: OrganizationOwnershipValidator,
+    private readonly tokenHashService: TokenHashService,
   ) {}
 
   async createRfidReader(
@@ -27,8 +28,8 @@ export class RfidService {
       createRfidReaderDto.organization_id,
     );
 
-    const plain_token = this.generateSecretToken();
-    const hashed_token = this.hashToken(plain_token);
+    const plain_token = this.tokenHashService.generateToken();
+    const hashed_token = this.tokenHashService.hashToken(plain_token);
 
     const rfidReader = this.rfidReaderRepository.create({
       secret_token: hashed_token,
@@ -38,14 +39,6 @@ export class RfidService {
     const savedReader = await this.rfidReaderRepository.save(rfidReader);
 
     return { rfid_reader: savedReader, plain_token };
-  }
-
-  private generateSecretToken(): string {
-    return randomBytes(32).toString('hex');
-  }
-
-  private hashToken(token: string): string {
-    return createHash('sha256').update(token).digest('hex');
   }
 
   async createRfidTag(

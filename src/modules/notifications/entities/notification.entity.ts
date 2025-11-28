@@ -7,7 +7,7 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { Employee } from '../../employees/entities/employee.entity';
-import { Organization } from '../../organizations/entities/organization.entity';
+import { Zone } from '../../buildings/entities/zone.entity';
 import { COLUMN_LENGTHS } from '../../../shared/constants/column-lengths';
 
 @Entity()
@@ -36,7 +36,7 @@ export class Notification {
   @JoinColumn({ name: 'employee_id' })
   employee: Employee;
 
-  @ManyToOne(() => Organization, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'organization_id' })
-  organization: Organization;
+  @ManyToOne(() => Zone, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'zone_id' })
+  zone: Zone;
 }

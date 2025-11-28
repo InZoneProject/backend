@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:15
@@ -13,6 +11,46 @@ services:
       POSTGRES_DB: ${DB_NAME}
     volumes:
       - pgdata:/var/lib/postgresql/data
+    networks:
+      - inzone_network
+
+  emqx:
+    image: emqx/emqx:5.5.0
+    container_name: inzone_emqx
+    restart: always
+    ports:
+      - '1883:1883'
+      - '8083:8083'
+      - '8084:8084'
+      - '8883:8883'
+      - '18083:18083'
+    environment:
+      EMQX_NAME: inzone_emqx
+      EMQX_HOST: 0.0.0.0
+      EMQX_NODE__COOKIE: ${MQTT_COOKIE}
+      EMQX_DASHBOARD__DEFAULT_USERNAME: ${MQTT_DASHBOARD_USER}
+      EMQX_DASHBOARD__DEFAULT_PASSWORD: ${MQTT_DASHBOARD_PASS}
+      EMQX_ALLOW_ANONYMOUS: "false"
+
+      EMQX_AUTHENTICATION__1__MECHANISM: password_based
+      EMQX_AUTHENTICATION__1__BACKEND: http
+      EMQX_AUTHENTICATION__1__ENABLE: "true"
+      EMQX_AUTHENTICATION__1__METHOD: post
+      EMQX_AUTHENTICATION__1__URL: ${BACKEND_URL}/mqtt/auth
+      EMQX_AUTHENTICATION__1__HEADERS__CONTENT_TYPE: application/json
+      EMQX_AUTHENTICATION__1__BODY: '{"username": "$${username}", "password": "$${password}", "clientid": "$${clientid}"}'
+
+      EMQX_AUTHORIZATION__SOURCES__1__TYPE: http
+      EMQX_AUTHORIZATION__SOURCES__1__ENABLE: "true"
+      EMQX_AUTHORIZATION__SOURCES__1__URL: ${BACKEND_URL}/mqtt/acl
+      EMQX_AUTHORIZATION__SOURCES__1__METHOD: post
+      EMQX_AUTHORIZATION__SOURCES__1__HEADERS__CONTENT_TYPE: application/json
+      EMQX_AUTHORIZATION__SOURCES__1__BODY: '{"username": "$${username}", "topic": "$${topic}", "action": "$${action}", "clientid": "$${clientid}"}'
+    volumes:
+      - emqx_data:/opt/emqx/data
+      - emqx_log:/opt/emqx/log
+    networks:
+      - inzone_network
 
   backend:
     build: .
@@ -24,9 +62,18 @@ services:
       - .env
     depends_on:
       - postgres
+      - emqx
     volumes:
       - .:/app
       - /app/node_modules
+    networks:
+      - inzone_network
 
 volumes:
   pgdata:
+  emqx_data:
+  emqx_log:
+
+networks:
+  inzone_network:
+    driver: bridge
