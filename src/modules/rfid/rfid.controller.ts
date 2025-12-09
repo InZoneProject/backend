@@ -9,6 +9,7 @@ import {
   ParseIntPipe,
   HttpCode,
   HttpStatus,
+  Patch,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { RfidService } from './rfid.service';
@@ -19,6 +20,7 @@ import { EmailVerificationGuard } from '../auth/guards/email-verification.guard'
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '../auth/enums/user-role.enum';
 import type { RequestWithUser } from '../auth/types/request-with-user.types';
+import { CreateRfidTagDto } from './dto/create-rfid-tag.dto';
 
 @ApiTags('RFID')
 @Controller('rfid')
@@ -48,7 +50,7 @@ export class RfidController {
   @Post('tags')
   @Roles(UserRole.TAG_ADMIN, UserRole.ORGANIZATION_ADMIN)
   async createRfidTag(
-    @Body() createRfidTagDto: OrganizationIdDto,
+    @Body() createRfidTagDto: CreateRfidTagDto,
     @Req() req: RequestWithUser,
   ) {
     return this.rfidService.createRfidTag(req.user.sub, createRfidTagDto);
@@ -72,5 +74,20 @@ export class RfidController {
     @Req() req: RequestWithUser,
   ): Promise<void> {
     await this.rfidService.deleteRfidTag(req.user.sub, tagId);
+  }
+
+  @Patch('readers/:id/token')
+  @Roles(UserRole.ORGANIZATION_ADMIN)
+  async regenerateReaderToken(
+    @Param('id', ParseIntPipe) readerId: number,
+    @Req() req: RequestWithUser,
+  ) {
+    const { rfid_reader, plain_token } =
+      await this.rfidService.regenerateReaderToken(req.user.sub, readerId);
+
+    return {
+      rfid_reader_id: rfid_reader.rfid_reader_id,
+      new_secret_token: plain_token,
+    };
   }
 }

@@ -1,3 +1,3 @@
 export interface ScanEventPayload {
-  tag_id: number;
+  tag_uid: number;
 }

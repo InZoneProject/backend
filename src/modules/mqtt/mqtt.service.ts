@@ -51,7 +51,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
       try {
         const result = await this.scanProcessingService.processScan(
           readerId,
-          payload.tag_id,
+          payload.tag_uid,
         );
 
         if (!result) return;
@@ -177,14 +177,14 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
       if (
         typeof parsedData !== 'object' ||
         parsedData === null ||
-        !('tag_id' in parsedData)
+        !('tag_uid' in parsedData)
       ) {
         return;
       }
 
       const payload = parsedData as ScanEventPayload;
 
-      if (!payload.tag_id) return;
+      if (!payload.tag_uid) return;
 
       for (const callback of this.scanEventCallbacks) {
         await callback(payload, readerId);

@@ -691,9 +691,9 @@ export class ZoneGeometryService {
   ): boolean {
     switch (doorSide) {
       case DoorSide.TOP:
-        return otherCoords.y === zoneCoords.y + zoneCoords.height;
-      case DoorSide.BOTTOM:
         return otherCoords.y + otherCoords.height === zoneCoords.y;
+      case DoorSide.BOTTOM:
+        return otherCoords.y === zoneCoords.y + zoneCoords.height;
       case DoorSide.LEFT:
         return otherCoords.x + otherCoords.width === zoneCoords.x;
       case DoorSide.RIGHT:

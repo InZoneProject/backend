@@ -1,4 +1,5 @@
 import {
+  Column,
   CreateDateColumn,
   Entity,
   JoinColumn,
@@ -14,6 +15,9 @@ import { Organization } from '../../organizations/entities/organization.entity';
 export class RfidTag {
   @PrimaryGeneratedColumn()
   rfid_tag_id: number;
+
+  @Column({ unique: true })
+  tag_uid: number;
 
   @CreateDateColumn()
   created_at: Date;

@@ -7,6 +7,7 @@ import { OrganizationIdDto } from '../../shared/dto/organization-id.dto';
 import { OrganizationOwnershipValidator } from '../../shared/validators/organization-ownership.validator';
 import { TokenHashService } from '../../shared/services/token-hash.service';
 import { RFID_CONSTANTS } from './rfid.constants';
+import { CreateRfidTagDto } from './dto/create-rfid-tag.dto';
 
 @Injectable()
 export class RfidService {
@@ -43,7 +44,7 @@ export class RfidService {
 
   async createRfidTag(
     userId: number,
-    createRfidTagDto: OrganizationIdDto,
+    createRfidTagDto: CreateRfidTagDto,
   ): Promise<RfidTag> {
     await this.organizationOwnershipValidator.validateOwnership(
       userId,
@@ -52,6 +53,7 @@ export class RfidService {
 
     const rfidTag = this.rfidTagRepository.create({
       organization: { organization_id: createRfidTagDto.organization_id },
+      tag_uid: createRfidTagDto.tag_uid,
     });
 
     return this.rfidTagRepository.save(rfidTag);
@@ -95,5 +97,34 @@ export class RfidService {
     );
 
     await this.rfidTagRepository.delete(tagId);
+  }
+
+  async regenerateReaderToken(
+    userId: number,
+    readerId: number,
+  ): Promise<{ rfid_reader: RfidReader; plain_token: string }> {
+    const reader = await this.rfidReaderRepository.findOne({
+      where: { rfid_reader_id: readerId },
+      relations: ['organization'],
+    });
+
+    if (!reader) {
+      throw new NotFoundException(
+        RFID_CONSTANTS.ERROR_MESSAGES.RFID_READER_NOT_FOUND,
+      );
+    }
+
+    await this.organizationOwnershipValidator.validateOwnership(
+      userId,
+      reader.organization.organization_id,
+    );
+
+    const plain_token = this.tokenHashService.generateToken();
+
+    reader.secret_token = this.tokenHashService.hashToken(plain_token);
+
+    const savedReader = await this.rfidReaderRepository.save(reader);
+
+    return { rfid_reader: savedReader, plain_token };
   }
 }

@@ -53,23 +53,6 @@ export class NotificationsService {
     });
   }
 
-  async countNotifications(
-    employeeId: number,
-    zoneId: number,
-  ): Promise<number> {
-    const startOfDay = this.getStartOfDay();
-
-    return this.notificationRepository
-      .createQueryBuilder('notification')
-      .where('notification.employee_id = :employeeId', { employeeId })
-      .andWhere('notification.zone_id = :zoneId', { zoneId })
-      .andWhere('notification.title = :title', {
-        title: NOTIFICATION_CONSTANTS.TITLES.TIME_LIMIT_EXCEEDED,
-      })
-      .andWhere('notification.created_at >= :startOfDay', { startOfDay })
-      .getCount();
-  }
-
   async markAllAsReadByEmployee(employeeId: number): Promise<void> {
     await this.notificationRepository.update(
       {

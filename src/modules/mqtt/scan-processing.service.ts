@@ -46,7 +46,7 @@ export class ScanProcessingService {
 
   async processScan(
     readerId: number,
-    tagId: number,
+    tagUid: number,
   ): Promise<ScanResult | null> {
     const reader = await this.rfidReaderRepository.findOne({
       where: { rfid_reader_id: readerId },
@@ -60,7 +60,7 @@ export class ScanProcessingService {
     const organizationId = reader.organization.organization_id;
 
     const tag = await this.rfidTagRepository.findOne({
-      where: { rfid_tag_id: tagId },
+      where: { tag_uid: tagUid },
       relations: ['organization'],
     });
 
