@@ -1,7 +1,7 @@
 services:
   postgres:
     image: postgres:15
-    container_name: rfid_postgres
+    container_name: rfid_postgres_prod
     restart: always
     ports:
       - ${DB_PORT}:${DB_PORT}
@@ -10,13 +10,13 @@ services:
       POSTGRES_PASSWORD: ${DB_PASS}
       POSTGRES_DB: ${DB_NAME}
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - pgdata_prod:/var/lib/postgresql/data
     networks:
       - inzone_network
 
   emqx:
     image: emqx/emqx:5.5.0
-    container_name: inzone_emqx
+    container_name: inzone_emqx_prod
     restart: always
     ports:
       - '1883:1883'
@@ -47,32 +47,31 @@ services:
       EMQX_AUTHORIZATION__SOURCES__1__HEADERS__CONTENT_TYPE: application/json
       EMQX_AUTHORIZATION__SOURCES__1__BODY: '{"username": "$${username}", "topic": "$${topic}", "action": "$${action}", "clientid": "$${clientid}"}'
     volumes:
-      - emqx_data:/opt/emqx/data
-      - emqx_log:/opt/emqx/log
+      - emqx_data_prod:/opt/emqx/data
+      - emqx_log_prod:/opt/emqx/log
     networks:
       - inzone_network
 
   backend:
-    build: .
-    container_name: inzone_backend
+    image: ${{ secrets.DOCKER_IMAGE_NAME }}
+    container_name: inzone_backend_prod
     restart: always
     ports:
       - ${PORT}:${PORT}
     env_file:
-      - .env
+      - .env.prod
     depends_on:
       - postgres
       - emqx
     volumes:
-      - .:/app
       - /app/node_modules
     networks:
       - inzone_network
 
 volumes:
-  pgdata:
-  emqx_data:
-  emqx_log:
+  pgdata_prod:
+  emqx_data_prod:
+  emqx_log_prod:
 
 networks:
   inzone_network:

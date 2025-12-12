@@ -1,0 +1,59 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    vars:
+      IMAGE_NAME_BASE: ghcr.io/${{ github.repository_owner }}/${{ github.repository | lower }}
+      DOCKER_IMAGE_NAME: ${{ vars.IMAGE_NAME_BASE }}:latest
+
+    steps:
+      - name: ⬇️ Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🔑 Login to GitHub Container Registry (GHCR)
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.PAT }}
+
+      - name: 🔨 Build and Push Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ vars.DOCKER_IMAGE_NAME }}
+          file: ./Dockerfile.prod
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: 🚀 Deploy to VPS via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          script: |
+            echo "--- Перехід до робочої директорії ---"
+            cd ${{ secrets.PROD_COMPOSE_PATH }}
+
+            echo "--- Логін до GitHub Container Registry на VPS ---"
+            # Логін використовує змінні оточення для безпеки
+            echo ${{ secrets.PAT }} | docker login ghcr.io -u ${{ secrets.DOCKERHUB_USERNAME }} --password-stdin
+            
+            echo "--- Завантаження нового образу та перезапуск контейнерів ---"
+            # Використовуємо змінну DOCKER_IMAGE_NAME для docker-compose
+            docker compose -f docker-compose.prod.yml --env-file .env.prod pull backend
+            docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --remove-orphans backend
+            
+            echo "--- Очищення (видалення невикористовуваних образів) ---"
+            docker image prune -f
+            
+            echo "✅ Деплой успішно завершено!"
