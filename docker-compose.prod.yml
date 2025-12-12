@@ -53,7 +53,7 @@ services:
       - inzone_network
 
   backend:
-    image: ${{ secrets.DOCKER_IMAGE_NAME }}
+    image: ${DOCKER_IMAGE_NAME}
     container_name: inzone_backend_prod
     restart: always
     ports:
