@@ -1,10 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { createHash, randomBytes } from 'crypto';
+import { CRYPTO_CONSTANTS } from '../constants/crypto.constants';
 
 @Injectable()
 export class TokenHashService {
   generateToken(): string {
-    return randomBytes(32).toString('hex');
+    return randomBytes(CRYPTO_CONSTANTS.TOKEN_BYTES).toString(
+      CRYPTO_CONSTANTS.TOKEN_ENCODING,
+    );
   }
 
   hashToken(token: string): string {

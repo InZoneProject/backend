@@ -15,6 +15,7 @@ import { AuthController } from './auth.controller';
 import { JwtAuthStrategy } from './strategies/jwt.strategy';
 import { RolesGuard } from './guards/roles.guard';
 import { EmailService } from '../../shared/services/email.service';
+import { PasswordReset } from './entities/password-reset.entity';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { EmailService } from '../../shared/services/email.service';
       Employee,
       InviteToken,
       EmailVerification,
+      PasswordReset,
     ]),
     GlobalAdminModule,
     JwtModule.registerAsync({

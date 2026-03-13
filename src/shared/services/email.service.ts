@@ -36,4 +36,25 @@ export class EmailService {
         ],
       });
   }
+
+  async sendPasswordResetLink(email: string, token: string): Promise<void> {
+    const frontendUrl = this.configService.getOrThrow<string>('FRONTEND_URL');
+    const resetLink = `${frontendUrl}/reset-password?token=${token}`;
+
+    await this.mailjet
+      .post('send', { version: EMAIL_CONSTANTS.MAILJET_API_VERSION })
+      .request({
+        Messages: [
+          {
+            From: {
+              Email: this.configService.get<string>('EMAIL_FROM'),
+              Name: EMAIL_CONSTANTS.SENDER_NAME,
+            },
+            To: [{ Email: email }],
+            Subject: EMAIL_CONSTANTS.PASSWORD_RESET_SUBJECT,
+            HTMLPart: EMAIL_CONSTANTS.PASSWORD_RESET_HTML_TEMPLATE(resetLink),
+          },
+        ],
+      });
+  }
 }

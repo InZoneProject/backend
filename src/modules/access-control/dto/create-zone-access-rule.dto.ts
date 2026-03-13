@@ -7,6 +7,7 @@ import {
   Max,
   MaxLength,
   Min,
+  ValidateIf,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -32,6 +33,10 @@ export class CreateZoneAccessRuleDto {
 
   @ApiPropertyOptional()
   @IsOptional()
+  @ValidateIf(
+    (dto: CreateZoneAccessRuleDto) =>
+      dto.access_type === AccessType.TIME_LIMITED,
+  )
   @IsNumber()
   @IsInt()
   @Min(ACCESS_CONTROL_CONSTANTS.VALIDATION.MIN_DURATION)

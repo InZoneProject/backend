@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Post,
+  Put,
   Req,
   UnauthorizedException,
   UseGuards,
@@ -19,6 +20,8 @@ import { VerificationStatusResponseDto } from './dto/verification-status-respons
 import { JwtAuthGuard } from './guards/jwt.guard';
 import { UserRole } from './enums/user-role.enum';
 import type { RequestWithUser } from './types/request-with-user.types';
+import { PasswordResetRequestDto } from './dto/password-reset-request.dto';
+import { PasswordChangeRequestDto } from './dto/password-change-request.dto';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -124,6 +127,51 @@ export class AuthController {
   ): Promise<VerificationStatusResponseDto> {
     this.checkGlobalAdminAccess(req.user.role);
     return this.authService.getVerificationStatus(req.user.sub, req.user.role);
+  }
+
+  @Post('employee/password-reset-request')
+  async sendEmployeeResetPasswordLink(
+    @Body() dto: PasswordResetRequestDto,
+  ): Promise<void> {
+    await this.authService.sendEmployeeResetPasswordLink(dto.email);
+  }
+
+  @Put('employee/reset-password')
+  async resetEmployeePassword(
+    @Body() dto: PasswordChangeRequestDto,
+  ): Promise<void> {
+    await this.authService.resetEmployeePassword(dto.token, dto.new_password);
+  }
+
+  @Post('organization-admin/password-reset-request')
+  async sendOrganizationAdminResetPasswordLink(
+    @Body() dto: PasswordResetRequestDto,
+  ): Promise<void> {
+    await this.authService.sendOrganizationAdminResetPasswordLink(dto.email);
+  }
+
+  @Post('tag-admin/password-reset-request')
+  async sendTagAdminResetPasswordLink(
+    @Body() dto: PasswordResetRequestDto,
+  ): Promise<void> {
+    await this.authService.sendTagAdminResetPasswordLink(dto.email);
+  }
+
+  @Put('organization-admin/reset-password')
+  async resetOrganizationAdminPassword(
+    @Body() dto: PasswordChangeRequestDto,
+  ): Promise<void> {
+    await this.authService.resetOrganizationAdminPassword(
+      dto.token,
+      dto.new_password,
+    );
+  }
+
+  @Put('tag-admin/reset-password')
+  async resetTagAdminPassword(
+    @Body() dto: PasswordChangeRequestDto,
+  ): Promise<void> {
+    await this.authService.resetTagAdminPassword(dto.token, dto.new_password);
   }
 
   private checkGlobalAdminAccess(role: UserRole): void {

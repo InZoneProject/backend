@@ -10,6 +10,7 @@ import { Door } from './entities/door.entity';
 import { ZoneGeometryValidator } from './zone-geometry.validator';
 import { BUILDINGS_CONSTANTS } from './buildings.constants';
 import { UpdateZoneGeometryDto } from './dto/update-zone-geometry.dto';
+import { ShiftBuildingZonesDto } from './dto/shift-building-zones.dto';
 import { DoorSide } from './enums/door-side.enum';
 import { Dimension } from './enums/dimension.enum';
 
@@ -184,6 +185,37 @@ export class ZoneGeometryService {
     return updatedZone;
   }
 
+  async shiftBuildingZones(
+    zone: Zone,
+    shiftDto: ShiftBuildingZonesDto,
+    manager: EntityManager,
+  ): Promise<void> {
+    this.validateShiftDto(shiftDto);
+
+    const newX = shiftDto.x_coordinate ?? zone.x_coordinate;
+    const newY = shiftDto.y_coordinate ?? zone.y_coordinate;
+
+    const deltaX = newX - zone.x_coordinate;
+    const deltaY = newY - zone.y_coordinate;
+
+    if (deltaX === 0 && deltaY === 0) {
+      return;
+    }
+
+    await manager
+      .createQueryBuilder()
+      .update(Zone)
+      .set({
+        x_coordinate: () => 'x_coordinate + :deltaX',
+        y_coordinate: () => 'y_coordinate + :deltaY',
+      })
+      .where('building_id = :buildingId', {
+        buildingId: zone.building.building_id,
+      })
+      .setParameters({ deltaX, deltaY })
+      .execute();
+  }
+
   private validateUpdateDto(updateDto: UpdateZoneGeometryDto): void {
     if (
       updateDto.width === undefined &&
@@ -193,6 +225,17 @@ export class ZoneGeometryService {
     ) {
       throw new BadRequestException(
         BUILDINGS_CONSTANTS.ERROR_MESSAGES.AT_LEAST_ONE_PARAMETER_REQUIRED,
+      );
+    }
+  }
+
+  private validateShiftDto(shiftDto: ShiftBuildingZonesDto): void {
+    if (
+      shiftDto.x_coordinate === undefined &&
+      shiftDto.y_coordinate === undefined
+    ) {
+      throw new BadRequestException(
+        BUILDINGS_CONSTANTS.ERROR_MESSAGES.AT_LEAST_ONE_COORDINATE_REQUIRED,
       );
     }
   }

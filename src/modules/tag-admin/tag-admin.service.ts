@@ -11,15 +11,16 @@ import { TagAssignment } from './entities/tag-assignment.entity';
 import { Employee } from '../employees/entities/employee.entity';
 import { RfidTag } from '../rfid/entities/rfid-tag.entity';
 import { OrganizationAdmin } from '../organizations/entities/organization-admin.entity';
-import { Position } from '../organizations/entities/position.entity';
 import { AssignTagToEmployeeDto } from './dto/assign-tag-to-employee.dto';
 import { EmployeeWithTagListItemDto } from './dto/employee-with-tag-list-item.dto';
 import { UpdateProfileInfoDto } from '../../shared/dto/update-profile-info.dto';
 import { UpdateProfilePhotoResponseDto } from '../../shared/dto/update-profile-photo-response.dto';
 import { UpdateProfileInfoResponseDto } from '../../shared/dto/update-profile-info-response.dto';
 import { OrganizationMemberRole } from '../../shared/enums/organization-member-role.enum';
+import { OrganizationMemberRawDto } from '../../shared/dto/organization-member-raw.dto';
 import { FileValidator } from '../../shared/validators/file.validator';
 import { FileService } from '../../shared/services/file.service';
+import { OrganizationMembersService } from '../../shared/services/organization-members.service';
 import { TAG_ADMIN_CONSTANTS } from './tag-admin.constants';
 
 @Injectable()
@@ -36,6 +37,7 @@ export class TagAdminService {
     private readonly fileValidator: FileValidator,
     private readonly fileService: FileService,
     private readonly dataSource: DataSource,
+    private readonly organizationMembersService: OrganizationMembersService,
   ) {}
 
   async updateProfilePhoto(
@@ -409,45 +411,25 @@ export class TagAdminService {
       .addGroupBy('rfid_tag.rfid_tag_id')
       .addGroupBy('rfid_tag.organization_id');
 
-    type EmployeeWithTagRaw = EmployeeWithTagListItemDto & {
-      sort_order: number;
-      position_ids?: number[] | null;
+    type EmployeeWithTagRaw = OrganizationMemberRawDto & {
+      rfid_tag_id: number | null;
     };
 
-    const orgAdminsResults = await orgAdmins.getRawMany<EmployeeWithTagRaw>();
-    const tagAdminsResults = await tagAdmins.getRawMany<EmployeeWithTagRaw>();
-    const employeesResults = await employees.getRawMany<EmployeeWithTagRaw>();
+    type EmployeeWithTagExtra = {
+      rfid_tag_id: number | null;
+    };
 
-    const allResults: EmployeeWithTagRaw[] = [
-      ...orgAdminsResults,
-      ...tagAdminsResults,
-      ...employeesResults,
-    ];
-
-    allResults.sort((a, b) => {
-      if (a.sort_order !== b.sort_order) {
-        return a.sort_order - b.sort_order;
-      }
-      return (
-        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    const baseResults =
+      await this.organizationMembersService.buildMembersResponseWithExtras<EmployeeWithTagExtra>(
+        [orgAdmins, tagAdmins, employees],
+        offset,
+        limit,
+        (raw: EmployeeWithTagRaw): EmployeeWithTagExtra => ({
+          rfid_tag_id: raw.rfid_tag_id ?? null,
+        }),
       );
-    });
 
-    const paginatedResults = allResults.slice(offset, offset + limit);
-
-    const positionIds = paginatedResults
-      .flatMap((r) => r.position_ids || [])
-      .filter((id): id is number => id !== null);
-
-    const positions =
-      positionIds.length > 0
-        ? await this.dataSource.getRepository(Position).find({
-            where: positionIds.map((id) => ({ position_id: id })),
-            select: ['position_id', 'role', 'description', 'created_at'],
-          })
-        : [];
-
-    return paginatedResults.map(
+    return baseResults.map(
       (result): EmployeeWithTagListItemDto => ({
         id: result.id,
         full_name: result.full_name,
@@ -456,12 +438,7 @@ export class TagAdminService {
         role: result.role,
         ...(result.role === OrganizationMemberRole.EMPLOYEE && {
           rfid_tag_id: result.rfid_tag_id,
-          positions:
-            result.position_ids && result.position_ids[0] !== null
-              ? positions.filter((p) =>
-                  result.position_ids?.includes(p.position_id),
-                )
-              : [],
+          positions: result.positions ?? [],
         }),
         created_at: result.created_at,
       }),

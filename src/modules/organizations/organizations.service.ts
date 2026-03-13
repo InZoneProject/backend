@@ -5,16 +5,24 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, ILike, LessThan, MoreThan, Repository } from 'typeorm';
+import {
+  DataSource,
+  ILike,
+  LessThan,
+  MoreThan,
+  ObjectLiteral,
+  Repository,
+  SelectQueryBuilder,
+} from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import { Organization } from './entities/organization.entity';
 import { OrganizationAdmin } from './entities/organization-admin.entity';
 import { Position } from './entities/position.entity';
 import { Employee } from '../employees/entities/employee.entity';
 import { Building } from '../buildings/entities/building.entity';
+import { Door } from '../buildings/entities/door.entity';
 import { Floor } from '../buildings/entities/floor.entity';
 import { Zone } from '../buildings/entities/zone.entity';
-import { Door } from '../buildings/entities/door.entity';
 import { InviteToken } from '../global-admin/entities/invite-token.entity';
 import { RfidTag } from '../rfid/entities/rfid-tag.entity';
 import { RfidReader } from '../rfid/entities/rfid-reader.entity';
@@ -30,10 +38,10 @@ import { UpdatePositionResponseDto } from './dto/update-position-response.dto';
 import { UpdateProfileInfoDto } from '../../shared/dto/update-profile-info.dto';
 import { UpdateProfilePhotoResponseDto } from '../../shared/dto/update-profile-photo-response.dto';
 import { UpdateProfileInfoResponseDto } from '../../shared/dto/update-profile-info-response.dto';
-import { OrganizationMemberRawDto } from '../../shared/dto/organization-member-raw.dto';
 import { OrganizationMemberRole } from '../../shared/enums/organization-member-role.enum';
 import { FileValidator } from '../../shared/validators/file.validator';
 import { FileService } from '../../shared/services/file.service';
+import { OrganizationMembersService } from '../../shared/services/organization-members.service';
 import { ORGANIZATIONS_CONSTANTS } from './organizations.constants';
 import { PAGINATION_CONSTANTS } from '../../shared/constants/pagination.constants';
 import { AUTH_CONSTANTS } from '../auth/auth.constants';
@@ -62,6 +70,7 @@ export class OrganizationsService {
     private readonly organizationOwnershipValidator: OrganizationOwnershipValidator,
     private readonly fileValidator: FileValidator,
     private readonly fileService: FileService,
+    private readonly organizationMembersService: OrganizationMembersService,
   ) {}
 
   async createOrganization(
@@ -192,70 +201,83 @@ export class OrganizationsService {
     organizationAdminId: number,
     organizationId: number,
   ): Promise<InviteResponseDto> {
-    await this.deleteExpiredUnusedTokens(organizationId);
-
-    const organization =
-      await this.organizationOwnershipValidator.validateOwnership(
-        organizationAdminId,
-        organizationId,
-      );
-
-    const existingToken = await this.findActiveTagAdminToken(organizationId);
-    if (existingToken) {
-      throw new ConflictException(
-        AUTH_CONSTANTS.ERROR_MESSAGES.ACTIVE_INVITE_TOKEN_EXISTS,
-      );
-    }
-
-    const invite_token = this.tokenService.createJwtToken(
+    return this.generateInvite(
+      organizationAdminId,
+      organizationId,
       InviteTokenType.TAG_ADMIN_INVITE,
+      FRONTEND_ROUTES.REGISTER_TAG_ADMIN,
     );
-    const token_encrypted = this.tokenService.encryptToken(invite_token);
-    const expires_at = this.tokenService.calculateExpirationDate();
-
-    await this.inviteTokenRepository.save({
-      token_encrypted,
-      expires_at,
-      is_used: false,
-      invite_type: InviteTokenType.TAG_ADMIN_INVITE,
-      organization,
-    });
-
-    const frontendUrl = this.configService.getOrThrow<string>('FRONTEND_URL');
-
-    return {
-      invite_url: `${frontendUrl}${FRONTEND_ROUTES.REGISTER_TAG_ADMIN}?token=${invite_token}`,
-      expires_at,
-    };
-  }
-
-  private async deleteExpiredUnusedTokens(
-    organizationId: number,
-  ): Promise<void> {
-    await this.inviteTokenRepository.delete({
-      expires_at: LessThan(new Date()),
-      is_used: false,
-      invite_type: InviteTokenType.TAG_ADMIN_INVITE,
-      organization: { organization_id: organizationId },
-    });
-  }
-
-  private async findActiveTagAdminToken(organizationId: number) {
-    return this.inviteTokenRepository.findOne({
-      where: {
-        is_used: false,
-        expires_at: MoreThan(new Date()),
-        invite_type: InviteTokenType.TAG_ADMIN_INVITE,
-        organization: { organization_id: organizationId },
-      },
-    });
   }
 
   async generateEmployeeInvite(
     organizationAdminId: number,
     organizationId: number,
   ): Promise<InviteResponseDto> {
-    await this.deleteExpiredUnusedEmployeeTokens(organizationId);
+    return this.generateInvite(
+      organizationAdminId,
+      organizationId,
+      InviteTokenType.EMPLOYEE_INVITE,
+      FRONTEND_ROUTES.JOIN_ORGANIZATION,
+    );
+  }
+
+  async getTagAdminInviteStatus(
+    organizationAdminId: number,
+    organizationId: number,
+  ): Promise<InviteResponseDto | null> {
+    return this.getInviteStatus(
+      organizationAdminId,
+      organizationId,
+      InviteTokenType.TAG_ADMIN_INVITE,
+      FRONTEND_ROUTES.REGISTER_TAG_ADMIN,
+    );
+  }
+
+  async getEmployeeInviteStatus(
+    organizationAdminId: number,
+    organizationId: number,
+  ): Promise<InviteResponseDto | null> {
+    return this.getInviteStatus(
+      organizationAdminId,
+      organizationId,
+      InviteTokenType.EMPLOYEE_INVITE,
+      FRONTEND_ROUTES.JOIN_ORGANIZATION,
+    );
+  }
+
+  private async deleteExpiredUnusedTokens(
+    organizationId: number,
+    inviteType: InviteTokenType,
+  ): Promise<void> {
+    await this.inviteTokenRepository.delete({
+      expires_at: LessThan(new Date()),
+      is_used: false,
+      invite_type: inviteType,
+      organization: { organization_id: organizationId },
+    });
+  }
+
+  private async findActiveToken(
+    organizationId: number,
+    inviteType: InviteTokenType,
+  ) {
+    return this.inviteTokenRepository.findOne({
+      where: {
+        is_used: false,
+        expires_at: MoreThan(new Date()),
+        invite_type: inviteType,
+        organization: { organization_id: organizationId },
+      },
+    });
+  }
+
+  private async generateInvite(
+    organizationAdminId: number,
+    organizationId: number,
+    inviteType: InviteTokenType,
+    route: string,
+  ): Promise<InviteResponseDto> {
+    await this.deleteExpiredUnusedTokens(organizationId, inviteType);
 
     const organization =
       await this.organizationOwnershipValidator.validateOwnership(
@@ -263,16 +285,17 @@ export class OrganizationsService {
         organizationId,
       );
 
-    const existingToken = await this.findActiveEmployeeToken(organizationId);
+    const existingToken = await this.findActiveToken(
+      organizationId,
+      inviteType,
+    );
     if (existingToken) {
       throw new ConflictException(
         AUTH_CONSTANTS.ERROR_MESSAGES.ACTIVE_INVITE_TOKEN_EXISTS,
       );
     }
 
-    const invite_token = this.tokenService.createJwtToken(
-      InviteTokenType.EMPLOYEE_INVITE,
-    );
+    const invite_token = this.tokenService.createJwtToken(inviteType);
     const token_encrypted = this.tokenService.encryptToken(invite_token);
     const expires_at = this.tokenService.calculateExpirationDate();
 
@@ -280,51 +303,30 @@ export class OrganizationsService {
       token_encrypted,
       expires_at,
       is_used: false,
-      invite_type: InviteTokenType.EMPLOYEE_INVITE,
+      invite_type: inviteType,
       organization,
     });
 
     const frontendUrl = this.configService.getOrThrow<string>('FRONTEND_URL');
 
     return {
-      invite_url: `${frontendUrl}${FRONTEND_ROUTES.JOIN_ORGANIZATION}?token=${invite_token}`,
+      invite_url: `${frontendUrl}${route}?token=${invite_token}`,
       expires_at,
     };
   }
 
-  private async deleteExpiredUnusedEmployeeTokens(
-    organizationId: number,
-  ): Promise<void> {
-    await this.inviteTokenRepository.delete({
-      expires_at: LessThan(new Date()),
-      is_used: false,
-      invite_type: InviteTokenType.EMPLOYEE_INVITE,
-      organization: { organization_id: organizationId },
-    });
-  }
-
-  private async findActiveEmployeeToken(organizationId: number) {
-    return this.inviteTokenRepository.findOne({
-      where: {
-        is_used: false,
-        expires_at: MoreThan(new Date()),
-        invite_type: InviteTokenType.EMPLOYEE_INVITE,
-        organization: { organization_id: organizationId },
-      },
-    });
-  }
-
-  async getTagAdminInviteStatus(
+  private async getInviteStatus(
     organizationAdminId: number,
     organizationId: number,
+    inviteType: InviteTokenType,
+    route: string,
   ): Promise<InviteResponseDto | null> {
     await this.organizationOwnershipValidator.validateOwnership(
       organizationAdminId,
       organizationId,
     );
 
-    const storedToken = await this.findActiveTagAdminToken(organizationId);
-
+    const storedToken = await this.findActiveToken(organizationId, inviteType);
     if (!storedToken) {
       return null;
     }
@@ -335,33 +337,7 @@ export class OrganizationsService {
     const frontendUrl = this.configService.getOrThrow<string>('FRONTEND_URL');
 
     return {
-      invite_url: `${frontendUrl}${FRONTEND_ROUTES.REGISTER_TAG_ADMIN}?token=${invite_token}`,
-      expires_at: storedToken.expires_at,
-    };
-  }
-
-  async getEmployeeInviteStatus(
-    organizationAdminId: number,
-    organizationId: number,
-  ): Promise<InviteResponseDto | null> {
-    await this.organizationOwnershipValidator.validateOwnership(
-      organizationAdminId,
-      organizationId,
-    );
-
-    const storedToken = await this.findActiveEmployeeToken(organizationId);
-
-    if (!storedToken) {
-      return null;
-    }
-
-    const invite_token = this.tokenService.decryptToken(
-      storedToken.token_encrypted,
-    );
-    const frontendUrl = this.configService.getOrThrow<string>('FRONTEND_URL');
-
-    return {
-      invite_url: `${frontendUrl}${FRONTEND_ROUTES.JOIN_ORGANIZATION}?token=${invite_token}`,
+      invite_url: `${frontendUrl}${route}?token=${invite_token}`,
       expires_at: storedToken.expires_at,
     };
   }
@@ -518,17 +494,14 @@ export class OrganizationsService {
     offset: number = PAGINATION_CONSTANTS.DEFAULT_OFFSET,
     limit: number = PAGINATION_CONSTANTS.DEFAULT_LIMIT,
   ) {
-    await this.organizationOwnershipValidator.validateOwnership(
+    return this.getOrganizationList(
       organizationAdminId,
       organizationId,
+      this.dataSource.getRepository(Building),
+      ['building_id', 'title', 'address'],
+      offset,
+      limit,
     );
-
-    return await this.dataSource.getRepository(Building).find({
-      where: { organization: { organization_id: organizationId } },
-      select: ['building_id', 'title', 'address'],
-      skip: offset,
-      take: limit,
-    });
   }
 
   async getPositionsList(
@@ -537,17 +510,14 @@ export class OrganizationsService {
     offset: number = PAGINATION_CONSTANTS.DEFAULT_OFFSET,
     limit: number = PAGINATION_CONSTANTS.DEFAULT_LIMIT,
   ) {
-    await this.organizationOwnershipValidator.validateOwnership(
+    return this.getOrganizationList(
       organizationAdminId,
       organizationId,
+      this.positionRepository,
+      ['position_id', 'role', 'description', 'created_at'],
+      offset,
+      limit,
     );
-
-    return await this.positionRepository.find({
-      where: { organization: { organization_id: organizationId } },
-      select: ['position_id', 'role', 'description', 'created_at'],
-      skip: offset,
-      take: limit,
-    });
   }
 
   async getRfidTagsList(
@@ -556,17 +526,14 @@ export class OrganizationsService {
     offset: number = PAGINATION_CONSTANTS.DEFAULT_OFFSET,
     limit: number = PAGINATION_CONSTANTS.DEFAULT_LIMIT,
   ) {
-    await this.organizationOwnershipValidator.validateOwnership(
+    return this.getOrganizationList(
       organizationAdminId,
       organizationId,
+      this.dataSource.getRepository(RfidTag),
+      ['rfid_tag_id', 'created_at'],
+      offset,
+      limit,
     );
-
-    return await this.dataSource.getRepository(RfidTag).find({
-      where: { organization: { organization_id: organizationId } },
-      select: ['rfid_tag_id', 'created_at'],
-      skip: offset,
-      take: limit,
-    });
   }
 
   async getRfidReadersList(
@@ -575,17 +542,14 @@ export class OrganizationsService {
     offset: number = PAGINATION_CONSTANTS.DEFAULT_OFFSET,
     limit: number = PAGINATION_CONSTANTS.DEFAULT_LIMIT,
   ) {
-    await this.organizationOwnershipValidator.validateOwnership(
+    return this.getOrganizationList(
       organizationAdminId,
       organizationId,
+      this.dataSource.getRepository(RfidReader),
+      ['rfid_reader_id', 'secret_token', 'created_at'],
+      offset,
+      limit,
     );
-
-    return await this.dataSource.getRepository(RfidReader).find({
-      where: { organization: { organization_id: organizationId } },
-      select: ['rfid_reader_id', 'secret_token', 'created_at'],
-      skip: offset,
-      take: limit,
-    });
   }
 
   async assignPositionToEmployee(
@@ -593,42 +557,13 @@ export class OrganizationsService {
     employeeId: number,
     positionId: number,
   ): Promise<void> {
-    const employee = await this.dataSource.getRepository(Employee).findOne({
-      where: { employee_id: employeeId },
-      relations: ['positions', 'organizations'],
-    });
-
-    if (!employee) {
-      throw new NotFoundException(
-        ORGANIZATIONS_CONSTANTS.ERROR_MESSAGES.EMPLOYEE_NOT_FOUND,
-      );
-    }
-
-    const position = await this.positionRepository.findOne({
-      where: { position_id: positionId },
-      relations: ['organization'],
-    });
-
-    if (!position) {
-      throw new NotFoundException(
-        ORGANIZATIONS_CONSTANTS.ERROR_MESSAGES.POSITION_NOT_FOUND,
-      );
-    }
-
-    await this.organizationOwnershipValidator.validateOwnership(
+    const employee = await this.getEmployeeWithPositions(employeeId);
+    const position = await this.getPositionWithOrganization(positionId);
+    await this.validateEmployeeOrganizationMembership(
       userId,
+      employee,
       position.organization.organization_id,
     );
-
-    const belongsToOrganization = employee.organizations?.some(
-      (org) => org.organization_id === position.organization.organization_id,
-    );
-
-    if (!belongsToOrganization) {
-      throw new BadRequestException(
-        ORGANIZATIONS_CONSTANTS.ERROR_MESSAGES.EMPLOYEE_NOT_IN_ORGANIZATION,
-      );
-    }
 
     if (!employee.positions) {
       employee.positions = [];
@@ -653,28 +588,8 @@ export class OrganizationsService {
     employeeId: number,
     positionId: number,
   ): Promise<void> {
-    const employee = await this.dataSource.getRepository(Employee).findOne({
-      where: { employee_id: employeeId },
-      relations: ['positions'],
-    });
-
-    if (!employee) {
-      throw new NotFoundException(
-        ORGANIZATIONS_CONSTANTS.ERROR_MESSAGES.EMPLOYEE_NOT_FOUND,
-      );
-    }
-
-    const position = await this.positionRepository.findOne({
-      where: { position_id: positionId },
-      relations: ['organization'],
-    });
-
-    if (!position) {
-      throw new NotFoundException(
-        ORGANIZATIONS_CONSTANTS.ERROR_MESSAGES.POSITION_NOT_FOUND,
-      );
-    }
-
+    const employee = await this.getEmployeeWithPositions(employeeId);
+    const position = await this.getPositionWithOrganization(positionId);
     await this.organizationOwnershipValidator.validateOwnership(
       userId,
       position.organization.organization_id,
@@ -732,14 +647,14 @@ export class OrganizationsService {
       organizationId,
     );
 
-    const orgAdmins = this.dataSource
-      .createQueryBuilder(OrganizationAdmin, 'org_admin')
-      .leftJoin('org_admin.organizations', 'org')
-      .where('org.organization_id = :organizationId', { organizationId })
-      .andWhere(
-        search ? 'org_admin.full_name ILIKE :search' : '1=1',
-        search ? { search: `%${search}%` } : {},
-      )
+    const orgAdmins = this.applyNameSearch(
+      this.dataSource
+        .createQueryBuilder(OrganizationAdmin, 'org_admin')
+        .leftJoin('org_admin.organizations', 'org')
+        .where('org.organization_id = :organizationId', { organizationId }),
+      'org_admin',
+      search,
+    )
       .select('org_admin.organization_admin_id', 'id')
       .addSelect('org_admin.full_name', 'full_name')
       .addSelect('org_admin.email', 'email')
@@ -749,13 +664,15 @@ export class OrganizationsService {
       .addSelect('1', 'sort_order')
       .addSelect('ARRAY[]::integer[]', 'position_ids');
 
-    const tagAdmins = this.dataSource
-      .createQueryBuilder(TagAdmin, 'tag_admin')
-      .where('tag_admin.organization_id = :organizationId', { organizationId })
-      .andWhere(
-        search ? 'tag_admin.full_name ILIKE :search' : '1=1',
-        search ? { search: `%${search}%` } : {},
-      )
+    const tagAdmins = this.applyNameSearch(
+      this.dataSource
+        .createQueryBuilder(TagAdmin, 'tag_admin')
+        .where('tag_admin.organization_id = :organizationId', {
+          organizationId,
+        }),
+      'tag_admin',
+      search,
+    )
       .select('tag_admin.tag_admin_id', 'id')
       .addSelect('tag_admin.full_name', 'full_name')
       .addSelect('tag_admin.email', 'email')
@@ -765,15 +682,15 @@ export class OrganizationsService {
       .addSelect('2', 'sort_order')
       .addSelect('ARRAY[]::integer[]', 'position_ids');
 
-    const employees = this.dataSource
-      .createQueryBuilder(Employee, 'employee')
-      .leftJoin('employee.organizations', 'emp_org')
-      .leftJoin('employee.positions', 'emp_pos')
-      .where('emp_org.organization_id = :organizationId', { organizationId })
-      .andWhere(
-        search ? 'employee.full_name ILIKE :search' : '1=1',
-        search ? { search: `%${search}%` } : {},
-      )
+    const employees = this.applyNameSearch(
+      this.dataSource
+        .createQueryBuilder(Employee, 'employee')
+        .leftJoin('employee.organizations', 'emp_org')
+        .leftJoin('employee.positions', 'emp_pos')
+        .where('emp_org.organization_id = :organizationId', { organizationId }),
+      'employee',
+      search,
+    )
       .select('employee.employee_id', 'id')
       .addSelect('employee.full_name', 'full_name')
       .addSelect('employee.email', 'email')
@@ -788,58 +705,101 @@ export class OrganizationsService {
       .addGroupBy('employee.photo')
       .addGroupBy('employee.created_at');
 
-    const orgAdminsResults =
-      await orgAdmins.getRawMany<OrganizationMemberRawDto>();
-    const tagAdminsResults =
-      await tagAdmins.getRawMany<OrganizationMemberRawDto>();
-    const employeesResults =
-      await employees.getRawMany<OrganizationMemberRawDto>();
+    return this.organizationMembersService.buildMembersResponse(
+      [orgAdmins, tagAdmins, employees],
+      offset,
+      limit,
+    );
+  }
 
-    const allResults: OrganizationMemberRawDto[] = [
-      ...orgAdminsResults,
-      ...tagAdminsResults,
-      ...employeesResults,
-    ];
+  private applyNameSearch<T extends ObjectLiteral>(
+    query: SelectQueryBuilder<T>,
+    alias: string,
+    search?: string,
+  ): SelectQueryBuilder<T> {
+    if (!search) {
+      return query;
+    }
 
-    allResults.sort((a, b) => {
-      if (a.sort_order !== b.sort_order) {
-        return a.sort_order - b.sort_order;
-      }
-      return (
-        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-      );
+    return query.andWhere(`${alias}.full_name ILIKE :search`, {
+      search: `%${search}%`,
+    });
+  }
+
+  private async getEmployeeWithPositions(
+    employeeId: number,
+  ): Promise<Employee> {
+    const employee = await this.dataSource.getRepository(Employee).findOne({
+      where: { employee_id: employeeId },
+      relations: ['positions', 'organizations'],
     });
 
-    const paginatedResults = allResults.slice(offset, offset + limit);
+    if (!employee) {
+      throw new NotFoundException(
+        ORGANIZATIONS_CONSTANTS.ERROR_MESSAGES.EMPLOYEE_NOT_FOUND,
+      );
+    }
 
-    const positionIds = paginatedResults
-      .flatMap((r) => r.position_ids || [])
-      .filter((id): id is number => id !== null);
+    return employee;
+  }
 
-    const positions =
-      positionIds.length > 0
-        ? await this.positionRepository.find({
-            where: positionIds.map((id) => ({ position_id: id })),
-            select: ['position_id', 'role', 'description', 'created_at'],
-          })
-        : [];
+  private async getPositionWithOrganization(
+    positionId: number,
+  ): Promise<Position> {
+    const position = await this.positionRepository.findOne({
+      where: { position_id: positionId },
+      relations: ['organization'],
+    });
 
-    return paginatedResults.map((result: OrganizationMemberRawDto) => ({
-      id: result.id,
-      full_name: result.full_name,
-      email: result.email,
-      photo: result.photo,
-      role: result.role,
-      ...(result.role === OrganizationMemberRole.EMPLOYEE && {
-        positions:
-          result.position_ids && result.position_ids[0] !== null
-            ? positions.filter((p) =>
-                result.position_ids?.includes(p.position_id),
-              )
-            : [],
-      }),
-      created_at: result.created_at,
-    }));
+    if (!position) {
+      throw new NotFoundException(
+        ORGANIZATIONS_CONSTANTS.ERROR_MESSAGES.POSITION_NOT_FOUND,
+      );
+    }
+
+    return position;
+  }
+
+  private async validateEmployeeOrganizationMembership(
+    userId: number,
+    employee: Employee,
+    organizationId: number,
+  ): Promise<void> {
+    await this.organizationOwnershipValidator.validateOwnership(
+      userId,
+      organizationId,
+    );
+
+    const belongsToOrganization = employee.organizations?.some(
+      (org) => org.organization_id === organizationId,
+    );
+
+    if (!belongsToOrganization) {
+      throw new BadRequestException(
+        ORGANIZATIONS_CONSTANTS.ERROR_MESSAGES.EMPLOYEE_NOT_IN_ORGANIZATION,
+      );
+    }
+  }
+
+  private async getOrganizationList<T extends ObjectLiteral>(
+    organizationAdminId: number,
+    organizationId: number,
+    repository: Repository<T>,
+    select: (keyof T)[],
+    offset: number,
+    limit: number,
+  ): Promise<T[]> {
+    await this.organizationOwnershipValidator.validateOwnership(
+      organizationAdminId,
+      organizationId,
+    );
+
+    return repository.find({
+      where: { organization: { organization_id: organizationId } } as never,
+      select: select as never,
+      skip: offset,
+      take: limit,
+    });
   }
 
   private async validateOrganizationMembership(

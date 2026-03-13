@@ -10,11 +10,13 @@ import { OrganizationOwnershipValidator } from './validators/organization-owners
 import { FileValidator } from './validators/file.validator';
 import { InviteToken } from '../modules/global-admin/entities/invite-token.entity';
 import { Organization } from '../modules/organizations/entities/organization.entity';
+import { Position } from '../modules/organizations/entities/position.entity';
+import { OrganizationMembersService } from './services/organization-members.service';
 
 @Global()
 @Module({
   imports: [
-    TypeOrmModule.forFeature([InviteToken, Organization]),
+    TypeOrmModule.forFeature([InviteToken, Organization, Position]),
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (config: ConfigService) => ({
@@ -31,6 +33,7 @@ import { Organization } from '../modules/organizations/entities/organization.ent
     TokenHashService,
     InviteTokenService,
     FileService,
+    OrganizationMembersService,
     OrganizationOwnershipValidator,
     FileValidator,
   ],
@@ -39,6 +42,7 @@ import { Organization } from '../modules/organizations/entities/organization.ent
     TokenHashService,
     InviteTokenService,
     FileService,
+    OrganizationMembersService,
     OrganizationOwnershipValidator,
     FileValidator,
   ],

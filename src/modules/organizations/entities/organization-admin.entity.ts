@@ -7,6 +7,7 @@ import {
 } from 'typeorm';
 import { Organization } from './organization.entity';
 import { COLUMN_LENGTHS } from '../../../shared/constants/column-lengths';
+import { PasswordReset } from '../../auth/entities/password-reset.entity';
 
 @Entity()
 export class OrganizationAdmin {
@@ -39,4 +40,10 @@ export class OrganizationAdmin {
     (organization) => organization.organization_admin,
   )
   organizations: Organization[];
+
+  @OneToMany(
+    () => PasswordReset,
+    (passwordReset) => passwordReset.organization_admin,
+  )
+  password_resets: PasswordReset[];
 }

@@ -50,10 +50,15 @@ export class AccessControlService {
       );
     }
 
+    const maxDurationMinutes =
+      createDto.access_type === AccessType.TIME_LIMITED
+        ? createDto.max_duration_minutes || null
+        : null;
+
     const rule = this.zoneAccessRuleRepository.create({
       title: createDto.title,
       access_type: createDto.access_type,
-      max_duration_minutes: createDto.max_duration_minutes || null,
+      max_duration_minutes: maxDurationMinutes,
       organization: { organization_id: createDto.organization_id },
     });
 
@@ -100,6 +105,10 @@ export class AccessControlService {
 
     if (updateDto.max_duration_minutes !== undefined) {
       rule.max_duration_minutes = updateDto.max_duration_minutes;
+    }
+
+    if (rule.access_type !== AccessType.TIME_LIMITED) {
+      rule.max_duration_minutes = null;
     }
 
     if (

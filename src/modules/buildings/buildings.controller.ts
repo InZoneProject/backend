@@ -13,8 +13,15 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Query,
 } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiConsumes, ApiBody } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiBearerAuth,
+  ApiConsumes,
+  ApiBody,
+  ApiQuery,
+} from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { BuildingsService } from './buildings.service';
 import { CreateZoneDto } from './dto/create-zone.dto';
@@ -36,6 +43,7 @@ import type { RequestWithUser } from '../auth/types/request-with-user.types';
 import { BuildingsMapper } from './buildings.mapper';
 import { UpdateZonePhotoDto } from './dto/update-zone-photo.dto';
 import { UpdateZoneGeometryDto } from './dto/update-zone-geometry.dto';
+import { ShiftBuildingZonesDto } from './dto/shift-building-zones.dto';
 
 @ApiTags('Buildings')
 @Controller('buildings')
@@ -90,19 +98,18 @@ export class BuildingsController {
     return BuildingsMapper.toBuildingInfoResponse(building);
   }
 
-  @Get(':id/map')
+  @Get(':id/floors/:floorId/map')
   async getBuildingMap(
     @Param('id', ParseIntPipe) buildingId: number,
+    @Param('floorId', ParseIntPipe) floorId: number,
     @Req() req: RequestWithUser,
   ) {
-    const { building, floors, zones, doors } =
-      await this.buildingsService.getBuildingMap(req.user.sub, buildingId);
-    return BuildingsMapper.toBuildingMapResponse(
-      building,
-      floors,
-      zones,
-      doors,
+    const { zones, doors } = await this.buildingsService.getBuildingMap(
+      req.user.sub,
+      buildingId,
+      floorId,
     );
+    return BuildingsMapper.toFloorMapResponse(zones, doors);
   }
 
   @Post(':id/floors')
@@ -200,12 +207,27 @@ export class BuildingsController {
     @Body() updateZoneGeometryDto: UpdateZoneGeometryDto,
     @Req() req: RequestWithUser,
   ) {
-    const zone = await this.buildingsService.updateZoneGeometry(
+    const { zones, doors } = await this.buildingsService.updateZoneGeometry(
       req.user.sub,
       zoneId,
       updateZoneGeometryDto,
     );
-    return BuildingsMapper.toUpdateZoneGeometryResponse(zone);
+    return BuildingsMapper.toFloorMapResponse(zones, doors);
+  }
+
+  @Patch('zones/:id/shift')
+  async shiftBuildingZones(
+    @Param('id', ParseIntPipe) zoneId: number,
+    @Body() shiftBuildingZonesDto: ShiftBuildingZonesDto,
+    @Req() req: RequestWithUser,
+  ) {
+    const { zones, doors } = await this.buildingsService.shiftBuildingZones(
+      req.user.sub,
+      zoneId,
+      shiftBuildingZonesDto,
+    );
+
+    return BuildingsMapper.toFloorMapResponse(zones, doors);
   }
 
   @Patch('floors/:id/reorder')
@@ -286,14 +308,32 @@ export class BuildingsController {
     await this.buildingsService.removeReaderFromDoor(req.user.sub, doorId);
   }
 
-  @Get(':id/employees/current-locations')
+  @Get(':id/floors/:floorId/employees/current-locations')
   async getCurrentEmployeeLocations(
     @Param('id', ParseIntPipe) buildingId: number,
+    @Param('floorId', ParseIntPipe) floorId: number,
     @Req() req: RequestWithUser,
   ) {
     return this.buildingsService.getCurrentEmployeeLocations(
       req.user.sub,
       buildingId,
+      floorId,
+    );
+  }
+
+  @Get(':buildingId/employees/:employeeId/daily-movements')
+  @ApiQuery({ name: 'date', required: true })
+  async getEmployeeDailyMovements(
+    @Param('buildingId', ParseIntPipe) buildingId: number,
+    @Param('employeeId', ParseIntPipe) employeeId: number,
+    @Query('date') date: string,
+    @Req() req: RequestWithUser,
+  ) {
+    return this.buildingsService.getEmployeeDailyMovements(
+      req.user.sub,
+      buildingId,
+      employeeId,
+      date,
     );
   }
 }

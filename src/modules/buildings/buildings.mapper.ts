@@ -8,12 +8,10 @@ import { CreateEntranceDoorResponse } from './dto/create-entrance-door-response.
 import { CreateDoorResponse } from './dto/create-door-response.dto';
 import { UpdateZoneTitleResponse } from './dto/update-zone-title-response.dto';
 import { UpdateZonePhotoResponse } from './dto/update-zone-photo-response.dto';
-import { UpdateZoneGeometryResponse } from './dto/update-zone-geometry-response.dto';
 import { BuildingInfoResponseDto } from './dto/building-info-response.dto';
-import { BuildingMapResponseDto } from './dto/building-map-response.dto';
+import { FloorMapResponseDto } from './dto/floor-map-response.dto';
 import { ZoneMapDto } from './dto/zone-map.dto';
 import { DoorMapDto } from './dto/door-map.dto';
-import { FloorMapDto } from './dto/floor-map.dto';
 import { BUILDINGS_CONSTANTS } from './buildings.constants';
 
 export class BuildingsMapper {
@@ -91,40 +89,23 @@ export class BuildingsMapper {
     };
   }
 
-  static toUpdateZoneGeometryResponse(zone: Zone): UpdateZoneGeometryResponse {
-    return {
-      zone_id: zone.zone_id,
-      width: zone.width,
-      height: zone.height,
-      x_coordinate: zone.x_coordinate,
-      y_coordinate: zone.y_coordinate,
-    };
-  }
-
   static toBuildingInfoResponse(building: Building): BuildingInfoResponseDto {
     return {
       building_id: building.building_id,
       title: building.title,
       address: building.address,
+      floors: building.floors
+        .slice()
+        .sort((a, b) => a.floor_number - b.floor_number)
+        .map((floor) => ({
+          floor_id: floor.floor_id,
+          floor_number: floor.floor_number,
+        })),
     };
   }
 
-  static toBuildingMapResponse(
-    building: Building,
-    floors: Floor[],
-    zones: Zone[],
-    doors: Door[],
-  ): BuildingMapResponseDto {
+  static toFloorMapResponse(zones: Zone[], doors: Door[]): FloorMapResponseDto {
     return {
-      building_id: building.building_id,
-      title: building.title,
-      address: building.address,
-      floors: floors.map(
-        (floor): FloorMapDto => ({
-          floor_id: floor.floor_id,
-          floor_number: floor.floor_number,
-        }),
-      ),
       zones: zones.map(
         (zone): ZoneMapDto => ({
           zone_id: zone.zone_id,

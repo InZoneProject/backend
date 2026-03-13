@@ -12,6 +12,7 @@ import { TagAssignment } from '../../tag-admin/entities/tag-assignment.entity';
 import { Position } from '../../organizations/entities/position.entity';
 import { Organization } from '../../organizations/entities/organization.entity';
 import { COLUMN_LENGTHS } from '../../../shared/constants/column-lengths';
+import { PasswordReset } from '../../auth/entities/password-reset.entity';
 
 @Entity()
 export class Employee {
@@ -57,4 +58,7 @@ export class Employee {
   @ManyToMany(() => Organization, (organization) => organization.employees)
   @JoinTable()
   organizations: Organization[];
+
+  @OneToMany(() => PasswordReset, (passwordReset) => passwordReset.employee)
+  password_resets: PasswordReset[];
 }

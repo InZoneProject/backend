@@ -1,12 +1,15 @@
 import { ApiProperty } from '@nestjs/swagger';
 
-export class BuildingDto {
+export class ZoneInfoDto {
   @ApiProperty()
-  building_id: number;
+  zone_id: number;
 
   @ApiProperty()
   title: string;
 
   @ApiProperty({ nullable: true })
-  address: string | null;
+  floor_id: number | null;
+
+  @ApiProperty()
+  building_id: number;
 }

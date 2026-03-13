@@ -1,5 +1,6 @@
 import { IsString, IsNotEmpty, IsOptional } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 
 export class UpdateBuildingDto {
   @ApiPropertyOptional()
@@ -8,8 +9,9 @@ export class UpdateBuildingDto {
   @IsOptional()
   title?: string;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: String, nullable: true })
   @IsString()
   @IsOptional()
+  @Type(() => String)
   address?: string | null;
 }

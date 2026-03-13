@@ -7,7 +7,6 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Employee } from './entities/employee.entity';
 import { InviteToken } from '../global-admin/entities/invite-token.entity';
-import { Position } from '../organizations/entities/position.entity';
 import { JoinOrganizationDto } from './dto/join-organization.dto';
 import { JoinOrganizationResponseDto } from './dto/join-organization-response.dto';
 import { InviteTokenType } from '../global-admin/enums/invite-token-type.enum';
@@ -15,10 +14,9 @@ import { InviteTokenService } from '../../shared/services/invite-token.service';
 import { UpdateProfileInfoDto } from '../../shared/dto/update-profile-info.dto';
 import { UpdateProfilePhotoResponseDto } from '../../shared/dto/update-profile-photo-response.dto';
 import { UpdateProfileInfoResponseDto } from '../../shared/dto/update-profile-info-response.dto';
-import { OrganizationMemberRawDto } from '../../shared/dto/organization-member-raw.dto';
-import { OrganizationMemberRole } from '../../shared/enums/organization-member-role.enum';
 import { FileValidator } from '../../shared/validators/file.validator';
 import { FileService } from '../../shared/services/file.service';
+import { OrganizationMembersService } from '../../shared/services/organization-members.service';
 import { AUTH_CONSTANTS } from '../auth/auth.constants';
 import { EMPLOYEES_CONSTANTS } from './employees.constants';
 
@@ -29,11 +27,10 @@ export class EmployeesService {
     private readonly employeeRepository: Repository<Employee>,
     @InjectRepository(InviteToken)
     private readonly inviteTokenRepository: Repository<InviteToken>,
-    @InjectRepository(Position)
-    private readonly positionRepository: Repository<Position>,
     private readonly inviteTokenService: InviteTokenService,
     private readonly fileValidator: FileValidator,
     private readonly fileService: FileService,
+    private readonly organizationMembersService: OrganizationMembersService,
   ) {}
 
   async joinOrganization(
@@ -317,58 +314,11 @@ export class EmployeesService {
       )
       .groupBy('employee.employee_id');
 
-    const orgAdminsResults =
-      await orgAdmins.getRawMany<OrganizationMemberRawDto>();
-    const tagAdminsResults =
-      await tagAdmins.getRawMany<OrganizationMemberRawDto>();
-    const employeesResults =
-      await employees.getRawMany<OrganizationMemberRawDto>();
-
-    const allResults: OrganizationMemberRawDto[] = [
-      ...orgAdminsResults,
-      ...tagAdminsResults,
-      ...employeesResults,
-    ];
-
-    allResults.sort((a, b) => {
-      if (a.sort_order !== b.sort_order) {
-        return a.sort_order - b.sort_order;
-      }
-      return (
-        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-      );
-    });
-
-    const paginatedResults = allResults.slice(offset, offset + limit);
-
-    const positionIds = paginatedResults
-      .flatMap((r) => r.position_ids || [])
-      .filter((id): id is number => id !== null);
-
-    const positions =
-      positionIds.length > 0
-        ? await this.positionRepository.find({
-            where: positionIds.map((id) => ({ position_id: id })),
-            select: ['position_id', 'role', 'description', 'created_at'],
-          })
-        : [];
-
-    return paginatedResults.map((result: OrganizationMemberRawDto) => ({
-      id: result.id,
-      full_name: result.full_name,
-      email: result.email,
-      photo: result.photo,
-      role: result.role,
-      ...(result.role === OrganizationMemberRole.EMPLOYEE && {
-        positions:
-          result.position_ids && result.position_ids[0] !== null
-            ? positions.filter((p) =>
-                result.position_ids?.includes(p.position_id),
-              )
-            : [],
-      }),
-      created_at: result.created_at,
-    }));
+    return this.organizationMembersService.buildMembersResponse(
+      [orgAdmins, tagAdmins, employees],
+      offset,
+      limit,
+    );
   }
 
   async deleteProfile(employeeId: number): Promise<void> {

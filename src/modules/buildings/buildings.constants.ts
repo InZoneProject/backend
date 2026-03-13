@@ -37,6 +37,9 @@ export const BUILDINGS_CONSTANTS = {
       `Cannot reduce zone: entrance door (door_id: ${doorId}) on ${side} side would not fit`,
     AT_LEAST_ONE_PARAMETER_REQUIRED:
       'At least one parameter (width, height, x_coordinate, y_coordinate) must be provided',
+    AT_LEAST_ONE_COORDINATE_REQUIRED:
+      'At least one parameter (x_coordinate, y_coordinate) must be provided',
+    ZONE_FLOOR_REQUIRED: 'Zone must belong to a floor for this operation',
     ENTRANCE_DOOR_FLOOR_MISMATCH:
       'Non-transition zones can only have entrance doors on the floor they belong to',
     FLOOR_NUMBER_TOO_HIGH_FOR_CREATE: (maxFloorNumber: number) =>
@@ -97,5 +100,19 @@ export const BUILDINGS_CONSTANTS = {
       'RFID reader belongs to a different organization',
     READER_ALREADY_ASSIGNED: 'RFID reader is already assigned to another door',
     DOOR_HAS_NO_READER: 'Door does not have an RFID reader assigned',
+    EMPLOYEE_NOT_FOUND: 'Employee not found',
+    EMPLOYEE_NOT_IN_ORGANIZATION: 'Employee does not belong to organization',
+    INVALID_DATE: 'Invalid date format. Use YYYY-MM-DD',
+  },
+  DATE: {
+    FORMAT_REGEX: /^(\d{4})-(\d{2})-(\d{2})$/,
+    START_HOUR: 0,
+    START_MINUTE: 0,
+    START_SECOND: 0,
+    START_MILLISECOND: 0,
+    END_HOUR: 23,
+    END_MINUTE: 59,
+    END_SECOND: 59,
+    END_MILLISECOND: 999,
   },
 } as const;

@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 
-export class FloorMapDto {
+export class FloorInfoDto {
   @ApiProperty()
   floor_id: number;
 

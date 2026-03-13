@@ -7,6 +7,7 @@ import {
   IsOptional,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import { COLUMN_LENGTHS } from '../../../shared/constants/column-lengths';
 
 export class CreateBuildingDto {
@@ -16,9 +17,10 @@ export class CreateBuildingDto {
   @MaxLength(COLUMN_LENGTHS.TITLE)
   title: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ type: String, nullable: true })
   @IsString()
   @IsOptional()
+  @Type(() => String)
   @MaxLength(COLUMN_LENGTHS.ADDRESS)
   address?: string | null;
 

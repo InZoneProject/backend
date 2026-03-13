@@ -16,6 +16,7 @@ import { CreateZoneDto } from './dto/create-zone.dto';
 import { CreateBuildingDto } from './dto/create-building.dto';
 import { CreateFloorDto } from './dto/create-floor.dto';
 import { UpdateZoneGeometryDto } from './dto/update-zone-geometry.dto';
+import { ShiftBuildingZonesDto } from './dto/shift-building-zones.dto';
 import { UpdateBuildingDto } from './dto/update-building.dto';
 import { ZoneGeometryValidator } from './zone-geometry.validator';
 import { ZoneGeometryService } from './zone-geometry.service';
@@ -24,6 +25,12 @@ import { BUILDINGS_CONSTANTS } from './buildings.constants';
 import { DoorSide } from './enums/door-side.enum';
 import { OrganizationOwnershipValidator } from '../../shared/validators/organization-ownership.validator';
 import { FileValidator } from '../../shared/validators/file.validator';
+import { Employee } from '../employees/entities/employee.entity';
+import { Notification } from '../notifications/entities/notification.entity';
+import { BuildingsMovementsMapper } from './buildings-movements.mapper';
+import { EmployeeDailyMovementsResponseDto } from './dto/employee-daily-movements-response.dto';
+import { EmployeeMovementItemDto } from './dto/employee-movement-item.dto';
+import { determineNewZoneById } from '../../shared/utils/zone-navigation.util';
 
 @Injectable()
 export class BuildingsService {
@@ -194,7 +201,7 @@ export class BuildingsService {
     userId: number,
     zoneId: number,
     updateDto: UpdateZoneGeometryDto,
-  ): Promise<Zone> {
+  ) {
     const zone = await this.findZoneWithOrganization(zoneId);
 
     await this.organizationOwnershipValidator.validateOwnership(
@@ -202,8 +209,49 @@ export class BuildingsService {
       zone.building.organization.organization_id,
     );
 
-    return this.dataSource.transaction(async (manager) =>
+    await this.dataSource.transaction(async (manager) =>
       this.zoneGeometryService.updateZoneGeometry(zone, updateDto, manager),
+    );
+
+    if (!zone.floor) {
+      throw new BadRequestException(
+        BUILDINGS_CONSTANTS.ERROR_MESSAGES.ZONE_FLOOR_REQUIRED,
+      );
+    }
+
+    return this.getBuildingMap(
+      userId,
+      zone.building.building_id,
+      zone.floor.floor_id,
+    );
+  }
+
+  async shiftBuildingZones(
+    userId: number,
+    zoneId: number,
+    shiftDto: ShiftBuildingZonesDto,
+  ) {
+    const zone = await this.findZoneWithOrganization(zoneId);
+
+    await this.organizationOwnershipValidator.validateOwnership(
+      userId,
+      zone.building.organization.organization_id,
+    );
+
+    await this.dataSource.transaction(async (manager) =>
+      this.zoneGeometryService.shiftBuildingZones(zone, shiftDto, manager),
+    );
+
+    if (!zone.floor) {
+      throw new BadRequestException(
+        BUILDINGS_CONSTANTS.ERROR_MESSAGES.ZONE_FLOOR_REQUIRED,
+      );
+    }
+
+    return this.getBuildingMap(
+      userId,
+      zone.building.building_id,
+      zone.floor.floor_id,
     );
   }
 
@@ -258,7 +306,7 @@ export class BuildingsService {
   async getBuildingInfo(userId: number, buildingId: number): Promise<Building> {
     const building = await this.buildingRepository.findOne({
       where: { building_id: buildingId },
-      relations: ['organization'],
+      relations: ['organization', 'floors'],
     });
 
     if (!building) {
@@ -1068,10 +1116,10 @@ export class BuildingsService {
     }
   }
 
-  async getBuildingMap(userId: number, buildingId: number) {
+  async getBuildingMap(userId: number, buildingId: number, floorId: number) {
     const building = await this.buildingRepository.findOne({
       where: { building_id: buildingId },
-      relations: ['organization', 'floors', 'zones', 'zones.floor'],
+      relations: ['organization'],
     });
 
     if (!building) {
@@ -1085,13 +1133,22 @@ export class BuildingsService {
       building.organization.organization_id,
     );
 
-    const doorRepository = this.dataSource.getRepository(Door);
-    const doors = await doorRepository.find({
-      where: { floor: { building: { building_id: buildingId } } },
-      relations: ['zone_from', 'zone_to', 'floor'],
-    });
+    await this.validateFloorExists(floorId, buildingId);
 
-    return { building, floors: building.floors, zones: building.zones, doors };
+    const [zones, doors] = await Promise.all([
+      this.zoneGeometryService.loadZonesForBuilding(buildingId, floorId, true),
+      this.dataSource.getRepository(Door).find({
+        where: {
+          floor: {
+            floor_id: floorId,
+            building: { building_id: buildingId },
+          },
+        },
+        relations: ['zone_from', 'zone_to', 'floor'],
+      }),
+    ]);
+
+    return { zones, doors };
   }
 
   async deleteZone(userId: number, zoneId: number): Promise<void> {
@@ -1332,7 +1389,11 @@ export class BuildingsService {
     await this.buildingRepository.remove(building);
   }
 
-  async getCurrentEmployeeLocations(userId: number, buildingId: number) {
+  async getCurrentEmployeeLocations(
+    userId: number,
+    buildingId: number,
+    floorId: number,
+  ) {
     const building = await this.buildingRepository.findOne({
       where: { building_id: buildingId },
       relations: ['organization'],
@@ -1349,12 +1410,14 @@ export class BuildingsService {
       building.organization.organization_id,
     );
 
+    await this.validateFloorExists(floorId, buildingId);
+
     const doorRepository = this.dataSource.getRepository(Door);
     const scanEventRepository = this.dataSource.getRepository(ScanEvent);
 
     const doors = await doorRepository.find({
       where: {
-        floor: { building: { building_id: buildingId } },
+        floor: { building: { building_id: buildingId }, floor_id: floorId },
       },
       relations: ['rfid_reader', 'zone_from', 'zone_to'],
     });
@@ -1442,5 +1505,187 @@ export class BuildingsService {
         employee_id,
         zone_id,
       }));
+  }
+
+  async getEmployeeDailyMovements(
+    userId: number,
+    buildingId: number,
+    employeeId: number,
+    date: string,
+  ): Promise<EmployeeDailyMovementsResponseDto> {
+    const building = await this.buildingRepository.findOne({
+      where: { building_id: buildingId },
+      relations: ['organization'],
+    });
+
+    if (!building) {
+      throw new NotFoundException(
+        BUILDINGS_CONSTANTS.ERROR_MESSAGES.BUILDING_NOT_FOUND,
+      );
+    }
+
+    await this.organizationOwnershipValidator.validateOwnership(
+      userId,
+      building.organization.organization_id,
+    );
+
+    const employee = await this.dataSource.getRepository(Employee).findOne({
+      where: { employee_id: employeeId },
+      relations: ['organizations'],
+    });
+
+    if (!employee) {
+      throw new NotFoundException(
+        BUILDINGS_CONSTANTS.ERROR_MESSAGES.EMPLOYEE_NOT_FOUND,
+      );
+    }
+
+    const belongsToOrganization = employee.organizations?.some(
+      (org) => org.organization_id === building.organization.organization_id,
+    );
+
+    if (!belongsToOrganization) {
+      throw new BadRequestException(
+        BUILDINGS_CONSTANTS.ERROR_MESSAGES.EMPLOYEE_NOT_IN_ORGANIZATION,
+      );
+    }
+
+    const { startOfDay, endOfDay } = this.parseDateRange(date);
+
+    const doors = await this.dataSource
+      .getRepository(Door)
+      .createQueryBuilder('door')
+      .leftJoinAndSelect('door.rfid_reader', 'rfid_reader')
+      .leftJoinAndSelect('door.zone_from', 'zone_from')
+      .leftJoinAndSelect('door.zone_to', 'zone_to')
+      .leftJoinAndSelect('door.floor', 'floor')
+      .leftJoinAndSelect('floor.building', 'building')
+      .where('building.building_id = :buildingId', { buildingId })
+      .getMany();
+
+    const readerIds = doors
+      .map((door) => door.rfid_reader?.rfid_reader_id)
+      .filter((id): id is number => id !== undefined);
+
+    if (readerIds.length === 0) {
+      return BuildingsMovementsMapper.toDailyMovementsResponse(
+        employee,
+        [],
+        [],
+      );
+    }
+
+    const scans = await this.dataSource
+      .getRepository(ScanEvent)
+      .createQueryBuilder('scan_event')
+      .leftJoinAndSelect('scan_event.rfid_tag', 'rfid_tag')
+      .leftJoin('rfid_tag.tag_assignments', 'tag_assignment')
+      .leftJoinAndSelect('scan_event.rfid_reader', 'rfid_reader')
+      .where('tag_assignment.employee_id = :employeeId', { employeeId })
+      .andWhere('scan_event.created_at >= :startOfDay', { startOfDay })
+      .andWhere('scan_event.created_at <= :endOfDay', { endOfDay })
+      .andWhere('rfid_reader.rfid_reader_id IN (:...readerIds)', { readerIds })
+      .orderBy('scan_event.created_at', 'ASC')
+      .getMany();
+
+    const doorMap = new Map(
+      doors
+        .filter((door) => door.rfid_reader?.rfid_reader_id)
+        .map((door) => [door.rfid_reader!.rfid_reader_id, door]),
+    );
+
+    let currentZoneId: number | null = null;
+    const movements: EmployeeMovementItemDto[] = [];
+
+    for (const scan of scans) {
+      const readerId = scan.rfid_reader?.rfid_reader_id;
+      if (!readerId) continue;
+
+      const door = doorMap.get(readerId);
+      if (!door) continue;
+
+      const zoneFromId = door.zone_from?.zone_id ?? null;
+      const zoneToId = door.zone_to.zone_id;
+
+      const nextZoneId = determineNewZoneById(
+        currentZoneId,
+        zoneFromId,
+        zoneToId,
+      );
+
+      movements.push(
+        BuildingsMovementsMapper.toMovementItem(
+          scan.scan_event_id,
+          scan.created_at,
+          door.door_id,
+          door.floor.floor_id,
+          currentZoneId,
+          nextZoneId,
+        ),
+      );
+
+      currentZoneId = nextZoneId;
+    }
+
+    const violations = await this.dataSource
+      .getRepository(Notification)
+      .createQueryBuilder('notification')
+      .leftJoinAndSelect('notification.zone', 'zone')
+      .leftJoinAndSelect('zone.floor', 'zone_floor')
+      .leftJoinAndSelect('zone.building', 'building')
+      .where('notification.employee_id = :employeeId', { employeeId })
+      .andWhere('notification.created_at >= :startOfDay', { startOfDay })
+      .andWhere('notification.created_at <= :endOfDay', { endOfDay })
+      .andWhere('building.building_id = :buildingId', { buildingId })
+      .orderBy('notification.created_at', 'ASC')
+      .getMany();
+
+    return BuildingsMovementsMapper.toDailyMovementsResponse(
+      employee,
+      movements,
+      violations.map((notification) =>
+        BuildingsMovementsMapper.toViolation(notification),
+      ),
+    );
+  }
+
+  private parseDateRange(date: string): { startOfDay: Date; endOfDay: Date } {
+    const match = BUILDINGS_CONSTANTS.DATE.FORMAT_REGEX.exec(date);
+    if (!match) {
+      throw new BadRequestException(
+        BUILDINGS_CONSTANTS.ERROR_MESSAGES.INVALID_DATE,
+      );
+    }
+
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+
+    const startOfDay = new Date(
+      year,
+      month - 1,
+      day,
+      BUILDINGS_CONSTANTS.DATE.START_HOUR,
+      BUILDINGS_CONSTANTS.DATE.START_MINUTE,
+      BUILDINGS_CONSTANTS.DATE.START_SECOND,
+      BUILDINGS_CONSTANTS.DATE.START_MILLISECOND,
+    );
+    if (Number.isNaN(startOfDay.getTime())) {
+      throw new BadRequestException(
+        BUILDINGS_CONSTANTS.ERROR_MESSAGES.INVALID_DATE,
+      );
+    }
+
+    const endOfDay = new Date(
+      year,
+      month - 1,
+      day,
+      BUILDINGS_CONSTANTS.DATE.END_HOUR,
+      BUILDINGS_CONSTANTS.DATE.END_MINUTE,
+      BUILDINGS_CONSTANTS.DATE.END_SECOND,
+      BUILDINGS_CONSTANTS.DATE.END_MILLISECOND,
+    );
+
+    return { startOfDay, endOfDay };
   }
 }

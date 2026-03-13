@@ -10,6 +10,7 @@ import {
 import { TagAssignment } from './tag-assignment.entity';
 import { Organization } from '../../organizations/entities/organization.entity';
 import { COLUMN_LENGTHS } from '../../../shared/constants/column-lengths';
+import { PasswordReset } from '../../auth/entities/password-reset.entity';
 
 @Entity()
 export class TagAdmin {
@@ -45,4 +46,7 @@ export class TagAdmin {
 
   @OneToMany(() => TagAssignment, (tag_assignment) => tag_assignment.tag_admin)
   tag_assignments: TagAssignment[];
+
+  @OneToMany(() => PasswordReset, (passwordReset) => passwordReset.tag_admin)
+  password_resets: PasswordReset[];
 }
