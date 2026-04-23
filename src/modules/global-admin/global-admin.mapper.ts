@@ -13,7 +13,9 @@ export class GlobalAdminMapper {
       created_at: token.created_at,
       expires_at: token.expires_at,
       used_at: token.used_at,
-      used_by: token.used_by_organization_admin.email,
+      full_name: token.used_by_organization_admin.full_name,
+      email: token.used_by_organization_admin.email,
+      photo: token.used_by_organization_admin.photo,
     };
   }
 

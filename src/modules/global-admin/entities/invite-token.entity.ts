@@ -45,15 +45,24 @@ export class InviteToken {
   @JoinColumn({ name: 'organization_id' })
   organization: Organization | null;
 
-  @ManyToOne(() => OrganizationAdmin, { nullable: true })
+  @ManyToOne(() => OrganizationAdmin, {
+    nullable: true,
+    onDelete: 'CASCADE',
+  })
   @JoinColumn({ name: 'used_by_organization_admin_id' })
   used_by_organization_admin: OrganizationAdmin | null;
 
-  @ManyToOne(() => TagAdmin, { nullable: true })
+  @ManyToOne(() => TagAdmin, {
+    nullable: true,
+    onDelete: 'CASCADE',
+  })
   @JoinColumn({ name: 'used_by_tag_admin_id' })
   used_by_tag_admin: TagAdmin | null;
 
-  @ManyToOne(() => Employee, { nullable: true })
+  @ManyToOne(() => Employee, {
+    nullable: true,
+    onDelete: 'CASCADE',
+  })
   @JoinColumn({ name: 'used_by_employee_id' })
   used_by_employee: Employee | null;
 }

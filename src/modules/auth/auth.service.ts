@@ -7,7 +7,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, Not, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
@@ -453,10 +453,16 @@ export class AuthService implements OnModuleInit {
       ? await this.getVerificationByUserAndRole(userId, role)
       : null;
 
+    const now = new Date();
+
+    if (!verification || now > verification.expires_at) {
+      return { is_verified: false };
+    }
+
     return {
       is_verified: false,
-      created_at: verification?.created_at,
-      expires_at: verification?.expires_at,
+      created_at: verification.created_at,
+      expires_at: verification.expires_at,
     };
   }
 
@@ -670,35 +676,6 @@ export class AuthService implements OnModuleInit {
     await this.emailService.sendPasswordResetLink(email, rawToken);
   }
 
-  async resetEmployeePassword(
-    token: string,
-    newPassword: string,
-  ): Promise<void> {
-    const validReset = await this.findEmployeePasswordResetByToken(token);
-
-    if (!validReset || validReset.expires_at < new Date()) {
-      throw new BadRequestException(
-        AUTH_CONSTANTS.ERROR_MESSAGES.INVALID_RESET_TOKEN,
-      );
-    }
-
-    const employee = validReset.employee;
-
-    if (!employee) {
-      throw new NotFoundException(
-        AUTH_CONSTANTS.ERROR_MESSAGES.EMPLOYEE_NOT_FOUND,
-      );
-    }
-
-    employee.password = await bcrypt.hash(
-      newPassword,
-      AUTH_CONSTANTS.BCRYPT_ROUNDS,
-    );
-
-    await this.employeeRepository.save(employee);
-    await this.passwordResetRepository.remove(validReset);
-  }
-
   async sendOrganizationAdminResetPasswordLink(email: string): Promise<void> {
     const organizationAdmin = await this.organizationAdminRepository.findOne({
       where: { email },
@@ -730,12 +707,8 @@ export class AuthService implements OnModuleInit {
     await this.emailService.sendPasswordResetLink(email, rawToken);
   }
 
-  async resetOrganizationAdminPassword(
-    token: string,
-    newPassword: string,
-  ): Promise<void> {
-    const validReset =
-      await this.findOrganizationAdminPasswordResetByToken(token);
+  async resetPassword(token: string, newPassword: string): Promise<void> {
+    const validReset = await this.findPasswordResetByToken(token);
 
     if (!validReset || validReset.expires_at < new Date()) {
       throw new BadRequestException(
@@ -743,11 +716,17 @@ export class AuthService implements OnModuleInit {
       );
     }
 
+    const passwordHashed = await bcrypt.hash(
+      newPassword,
+      AUTH_CONSTANTS.BCRYPT_ROUNDS,
+    );
+
     if (validReset.organization_admin) {
-      validReset.organization_admin.password = await bcrypt.hash(
+      await this.ensurePasswordIsDifferent(
+        validReset.organization_admin.password,
         newPassword,
-        AUTH_CONSTANTS.BCRYPT_ROUNDS,
       );
+      validReset.organization_admin.password = passwordHashed;
       await this.organizationAdminRepository.save(
         validReset.organization_admin,
       );
@@ -755,29 +734,24 @@ export class AuthService implements OnModuleInit {
       return;
     }
 
-    throw new BadRequestException(
-      AUTH_CONSTANTS.ERROR_MESSAGES.INVALID_RESET_TOKEN,
-    );
-  }
-
-  async resetTagAdminPassword(
-    token: string,
-    newPassword: string,
-  ): Promise<void> {
-    const validReset = await this.findTagAdminPasswordResetByToken(token);
-
-    if (!validReset || validReset.expires_at < new Date()) {
-      throw new BadRequestException(
-        AUTH_CONSTANTS.ERROR_MESSAGES.INVALID_RESET_TOKEN,
+    if (validReset.tag_admin) {
+      await this.ensurePasswordIsDifferent(
+        validReset.tag_admin.password,
+        newPassword,
       );
+      validReset.tag_admin.password = passwordHashed;
+      await this.tagAdminRepository.save(validReset.tag_admin);
+      await this.passwordResetRepository.remove(validReset);
+      return;
     }
 
-    if (validReset.tag_admin) {
-      validReset.tag_admin.password = await bcrypt.hash(
+    if (validReset.employee) {
+      await this.ensurePasswordIsDifferent(
+        validReset.employee.password,
         newPassword,
-        AUTH_CONSTANTS.BCRYPT_ROUNDS,
       );
-      await this.tagAdminRepository.save(validReset.tag_admin);
+      validReset.employee.password = passwordHashed;
+      await this.employeeRepository.save(validReset.employee);
       await this.passwordResetRepository.remove(validReset);
       return;
     }
@@ -851,13 +825,10 @@ export class AuthService implements OnModuleInit {
     }
 
     if (existingReset.expires_at > new Date()) {
-      const remainingSeconds = this.getRemainingSeconds(
-        existingReset.expires_at,
-      );
       throw new BadRequestException({
         message:
           AUTH_CONSTANTS.ERROR_MESSAGES.PASSWORD_RESET_LINK_ALREADY_ACTIVE,
-        remaining_time_seconds: remainingSeconds,
+        created_at: existingReset.created_at,
         expires_at: existingReset.expires_at,
       });
     }
@@ -885,32 +856,11 @@ export class AuthService implements OnModuleInit {
     return rawToken;
   }
 
-  private async findEmployeePasswordResetByToken(
+  private async findPasswordResetByToken(
     token: string,
   ): Promise<PasswordReset | null> {
     const resets = await this.passwordResetRepository.find({
-      where: { employee: Not(IsNull()) },
-      relations: ['employee'],
-    });
-    return this.matchPasswordResetToken(token, resets);
-  }
-
-  private async findOrganizationAdminPasswordResetByToken(
-    token: string,
-  ): Promise<PasswordReset | null> {
-    const resets = await this.passwordResetRepository.find({
-      where: { organization_admin: Not(IsNull()) },
-      relations: ['organization_admin'],
-    });
-    return this.matchPasswordResetToken(token, resets);
-  }
-
-  private async findTagAdminPasswordResetByToken(
-    token: string,
-  ): Promise<PasswordReset | null> {
-    const resets = await this.passwordResetRepository.find({
-      where: { tag_admin: Not(IsNull()) },
-      relations: ['tag_admin'],
+      relations: ['organization_admin', 'tag_admin', 'employee'],
     });
     return this.matchPasswordResetToken(token, resets);
   }
@@ -929,7 +879,23 @@ export class AuthService implements OnModuleInit {
     return null;
   }
 
-  private getRemainingSeconds(expiresAt: Date): number {
-    return Math.max(0, Math.ceil((expiresAt.getTime() - Date.now()) / 1000));
+  private async ensurePasswordIsDifferent(
+    currentPasswordHashed: string | null | undefined,
+    newPassword: string,
+  ): Promise<void> {
+    if (!currentPasswordHashed) {
+      return;
+    }
+
+    const isSameAsCurrent = await bcrypt.compare(
+      newPassword,
+      currentPasswordHashed,
+    );
+
+    if (isSameAsCurrent) {
+      throw new BadRequestException(
+        AUTH_CONSTANTS.ERROR_MESSAGES.PASSWORD_SAME_AS_CURRENT,
+      );
+    }
   }
 }

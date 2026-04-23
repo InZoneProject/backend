@@ -136,13 +136,6 @@ export class AuthController {
     await this.authService.sendEmployeeResetPasswordLink(dto.email);
   }
 
-  @Put('employee/reset-password')
-  async resetEmployeePassword(
-    @Body() dto: PasswordChangeRequestDto,
-  ): Promise<void> {
-    await this.authService.resetEmployeePassword(dto.token, dto.new_password);
-  }
-
   @Post('organization-admin/password-reset-request')
   async sendOrganizationAdminResetPasswordLink(
     @Body() dto: PasswordResetRequestDto,
@@ -157,21 +150,9 @@ export class AuthController {
     await this.authService.sendTagAdminResetPasswordLink(dto.email);
   }
 
-  @Put('organization-admin/reset-password')
-  async resetOrganizationAdminPassword(
-    @Body() dto: PasswordChangeRequestDto,
-  ): Promise<void> {
-    await this.authService.resetOrganizationAdminPassword(
-      dto.token,
-      dto.new_password,
-    );
-  }
-
-  @Put('tag-admin/reset-password')
-  async resetTagAdminPassword(
-    @Body() dto: PasswordChangeRequestDto,
-  ): Promise<void> {
-    await this.authService.resetTagAdminPassword(dto.token, dto.new_password);
+  @Put('reset-password')
+  async resetPassword(@Body() dto: PasswordChangeRequestDto): Promise<void> {
+    await this.authService.resetPassword(dto.token, dto.new_password);
   }
 
   private checkGlobalAdminAccess(role: UserRole): void {

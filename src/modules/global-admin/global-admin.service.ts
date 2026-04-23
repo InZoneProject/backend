@@ -16,6 +16,7 @@ import { OrganizationAdminListResponseDto } from './dto/organization-admin-list-
 import { InviteTokenType } from './enums/invite-token-type.enum';
 import { GlobalAdminMapper } from './global-admin.mapper';
 import { InviteTokenService } from '../../shared/services/invite-token.service';
+import { FRONTEND_ROUTES } from '../../shared/constants/frontend-routes.constants';
 
 @Injectable()
 export class GlobalAdminService {
@@ -44,7 +45,7 @@ export class GlobalAdminService {
 
     return this.inviteTokenService.generateInviteToken({
       tokenType: InviteTokenType.ORGANIZATION_ADMIN_INVITE,
-      frontendPath: '/register',
+      frontendPath: FRONTEND_ROUTES.REGISTER_ORGANIZATION_ADMIN,
     });
   }
 
@@ -53,27 +54,41 @@ export class GlobalAdminService {
       tokenType: InviteTokenType.ORGANIZATION_ADMIN_INVITE,
     });
 
-    return this.inviteTokenService.getInviteStatus(storedToken, '/register');
+    return this.inviteTokenService.getInviteStatus(
+      storedToken,
+      FRONTEND_ROUTES.REGISTER_ORGANIZATION_ADMIN,
+    );
   }
 
-  async getInviteTokenHistory(
+  async getInviteHistory(
+    search?: string,
     offset: number = PAGINATION_CONSTANTS.DEFAULT_OFFSET,
     limit: number = PAGINATION_CONSTANTS.DEFAULT_LIMIT,
   ): Promise<InviteHistoryResponseDto> {
-    const [tokens, total] = await this.inviteTokenRepository.findAndCount({
-      where: {
-        is_used: true,
-        invite_type: InviteTokenType.ORGANIZATION_ADMIN_INVITE,
-      },
-      relations: ['used_by_organization_admin'],
-      order: { created_at: 'DESC' },
-      skip: offset,
-      take: limit,
-    });
+    const query = this.inviteTokenRepository
+      .createQueryBuilder('token')
+      .innerJoinAndSelect('token.used_by_organization_admin', 'admin')
+      .where('token.is_used = :isUsed', { isUsed: true })
+      .andWhere('token.invite_type = :inviteType', {
+        inviteType: InviteTokenType.ORGANIZATION_ADMIN_INVITE,
+      });
 
-    const items = tokens
-      .filter((token) => token.used_at && token.used_by_organization_admin)
-      .map((token) => GlobalAdminMapper.toInviteHistoryItemDto(token));
+    if (search) {
+      query.andWhere(
+        '(admin.full_name ILIKE :search OR admin.email ILIKE :search)',
+        { search: `%${search}%` },
+      );
+    }
+
+    const [tokens, total] = await query
+      .orderBy('token.created_at', 'DESC')
+      .skip(offset)
+      .take(limit)
+      .getManyAndCount();
+
+    const items = tokens.map((token) =>
+      GlobalAdminMapper.toInviteHistoryItemDto(token),
+    );
 
     return {
       items,
@@ -82,15 +97,26 @@ export class GlobalAdminService {
   }
 
   async getAllOrganizationAdmins(
+    search?: string,
     offset: number = PAGINATION_CONSTANTS.DEFAULT_OFFSET,
     limit: number = PAGINATION_CONSTANTS.DEFAULT_LIMIT,
   ): Promise<OrganizationAdminListResponseDto> {
-    const [items, total] = await this.organizationAdminRepository.findAndCount({
-      skip: offset,
-      take: limit,
-      relations: ['organizations'],
-      order: { created_at: 'DESC' },
-    });
+    const query = this.organizationAdminRepository
+      .createQueryBuilder('admin')
+      .leftJoinAndSelect('admin.organizations', 'org');
+
+    if (search) {
+      query.andWhere(
+        '(admin.full_name ILIKE :search OR admin.email ILIKE :search)',
+        { search: `%${search}%` },
+      );
+    }
+
+    const [items, total] = await query
+      .orderBy('admin.created_at', 'DESC')
+      .skip(offset)
+      .take(limit)
+      .getManyAndCount();
 
     return {
       items: items.map((admin) =>

@@ -2,5 +2,7 @@ export class InviteHistoryItemDto {
   created_at: Date;
   expires_at: Date;
   used_at: Date;
-  used_by: string;
+  full_name: string;
+  email: string;
+  photo: string | null;
 }

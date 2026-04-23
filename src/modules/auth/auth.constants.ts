@@ -15,6 +15,7 @@ export const AUTH_CONSTANTS = {
       'GLOBAL_ADMIN_EMAIL and GLOBAL_ADMIN_PASSWORD must be set in environment variables',
     INVALID_INVITE_TOKEN: 'Invalid or expired invite token',
     INVALID_RESET_TOKEN: 'Invalid or expired password reset token',
+    PASSWORD_SAME_AS_CURRENT: 'New password cannot match current password',
     INVITE_TOKEN_ALREADY_USED: 'This invite token has already been used',
     ACTIVE_INVITE_TOKEN_EXISTS: 'An active invite token already exists.',
     EMAIL_ALREADY_IN_USE: 'Email already in use',

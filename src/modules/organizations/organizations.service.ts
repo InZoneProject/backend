@@ -88,7 +88,7 @@ export class OrganizationsService {
       await manager.save(organization);
 
       const building = manager.create(Building, {
-        address: createOrganizationDto.description,
+        address: null,
         organization,
       });
       await manager.save(building);

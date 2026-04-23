@@ -11,7 +11,7 @@ import {
   HttpStatus,
   DefaultValuePipe,
 } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { GlobalAdminService } from './global-admin.service';
 import { PAGINATION_CONSTANTS } from '../../shared/constants/pagination.constants';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
@@ -41,39 +41,53 @@ export class GlobalAdminController {
   }
 
   @Get('invites/history')
+  @Roles(UserRole.GLOBAL_ADMIN)
+  @ApiQuery({ name: 'search', required: false })
+  @ApiQuery({ name: 'offset', required: false })
+  @ApiQuery({ name: 'limit', required: false })
   async getInviteHistory(
+    @Query('search') search?: string,
     @Query(
       'offset',
       new DefaultValuePipe(PAGINATION_CONSTANTS.DEFAULT_OFFSET),
       ParseIntPipe,
     )
-    offset: number,
+    offset?: number,
     @Query(
       'limit',
       new DefaultValuePipe(PAGINATION_CONSTANTS.DEFAULT_LIMIT),
       ParseIntPipe,
     )
-    limit: number,
+    limit?: number,
   ): Promise<InviteHistoryResponseDto> {
-    return this.globalAdminService.getInviteTokenHistory(offset, limit);
+    return this.globalAdminService.getInviteHistory(search, offset, limit);
   }
 
   @Get('organization-admins')
+  @Roles(UserRole.GLOBAL_ADMIN)
+  @ApiQuery({ name: 'search', required: false })
+  @ApiQuery({ name: 'offset', required: false })
+  @ApiQuery({ name: 'limit', required: false })
   async getAllOrganizationAdmins(
+    @Query('search') search?: string,
     @Query(
       'offset',
       new DefaultValuePipe(PAGINATION_CONSTANTS.DEFAULT_OFFSET),
       ParseIntPipe,
     )
-    offset: number,
+    offset?: number,
     @Query(
       'limit',
       new DefaultValuePipe(PAGINATION_CONSTANTS.DEFAULT_LIMIT),
       ParseIntPipe,
     )
-    limit: number,
+    limit?: number,
   ): Promise<OrganizationAdminListResponseDto> {
-    return this.globalAdminService.getAllOrganizationAdmins(offset, limit);
+    return this.globalAdminService.getAllOrganizationAdmins(
+      search,
+      offset,
+      limit,
+    );
   }
 
   @Delete('organization-admins/:id')

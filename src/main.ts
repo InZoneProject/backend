@@ -5,21 +5,29 @@ import { ConfigService } from '@nestjs/config';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { join } from 'path';
 import { AppModule } from './app.module';
-import { SWAGGER_CONFIG } from './main.constants';
+import { SWAGGER_CONFIG, CORS_CONFIG } from './main.constants';
 import { FILE_VALIDATION_CONSTANTS } from './shared/constants/file-validation.constants';
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
-  const config = app.get(ConfigService);
+  const application =
+    await NestFactory.create<NestExpressApplication>(AppModule);
+  const configurationService = application.get(ConfigService);
 
-  app.useStaticAssets(
+  const frontendUrl = configurationService.get<string>('FRONTEND_URL');
+
+  application.enableCors({
+    ...CORS_CONFIG,
+    origin: frontendUrl,
+  });
+
+  application.useStaticAssets(
     join(process.cwd(), FILE_VALIDATION_CONSTANTS.UPLOADS_FOLDER_NAME),
     {
       prefix: FILE_VALIDATION_CONSTANTS.UPLOADS_URL_PREFIX,
     },
   );
 
-  app.useGlobalPipes(
+  application.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
       forbidNonWhitelisted: true,
@@ -27,7 +35,7 @@ async function bootstrap() {
     }),
   );
 
-  const swaggerConfig = new DocumentBuilder()
+  const swaggerOptions = new DocumentBuilder()
     .setTitle(SWAGGER_CONFIG.TITLE)
     .setDescription(SWAGGER_CONFIG.DESCRIPTION)
     .setVersion(SWAGGER_CONFIG.VERSION)
@@ -37,15 +45,18 @@ async function bootstrap() {
     )
     .build();
 
-  const document = SwaggerModule.createDocument(app, swaggerConfig);
-  SwaggerModule.setup(SWAGGER_CONFIG.API_PATH, app, document, {
+  const swaggerDocument = SwaggerModule.createDocument(
+    application,
+    swaggerOptions,
+  );
+  SwaggerModule.setup(SWAGGER_CONFIG.API_PATH, application, swaggerDocument, {
     swaggerOptions: {
       persistAuthorization: true,
     },
   });
 
-  const port = config.get<number>('PORT') ?? 3000;
-  await app.listen(port);
+  const serverPort = configurationService.get<number>('PORT') ?? 3000;
+  await application.listen(serverPort);
 }
 
 void bootstrap();
