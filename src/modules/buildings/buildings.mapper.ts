@@ -90,17 +90,18 @@ export class BuildingsMapper {
   }
 
   static toBuildingInfoResponse(building: Building): BuildingInfoResponseDto {
+    const sortedFloors = (building.floors ?? [])
+      .slice()
+      .sort((a, b) => a.floor_number - b.floor_number);
+
     return {
       building_id: building.building_id,
       title: building.title,
       address: building.address,
-      floors: building.floors
-        .slice()
-        .sort((a, b) => a.floor_number - b.floor_number)
-        .map((floor) => ({
-          floor_id: floor.floor_id,
-          floor_number: floor.floor_number,
-        })),
+      floors: sortedFloors.map((floor) => ({
+        floor_id: floor.floor_id,
+        floor_number: floor.floor_number,
+      })),
     };
   }
 

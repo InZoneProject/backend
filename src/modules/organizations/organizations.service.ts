@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { basename } from 'path';
 import { InjectRepository } from '@nestjs/typeorm';
 import {
   DataSource,
@@ -52,6 +53,7 @@ import { OrganizationOwnershipValidator } from '../../shared/validators/organiza
 import { FRONTEND_ROUTES } from '../../shared/constants/frontend-routes.constants';
 import { DoorSide } from '../buildings/enums/door-side.enum';
 import { UserRole } from '../auth/enums/user-role.enum';
+import { FILE_VALIDATION_CONSTANTS } from '../../shared/constants/file-validation.constants';
 
 @Injectable()
 export class OrganizationsService {
@@ -72,6 +74,27 @@ export class OrganizationsService {
     private readonly fileService: FileService,
     private readonly organizationMembersService: OrganizationMembersService,
   ) {}
+
+  private mapProfilePhotoToPublicUrl(photoPath: string | null): string | null {
+    if (!photoPath) {
+      return null;
+    }
+
+    if (photoPath.startsWith('http://') || photoPath.startsWith('https://')) {
+      return photoPath;
+    }
+
+    const uploadsPrefix = FILE_VALIDATION_CONSTANTS.UPLOADS_URL_PREFIX.replace(
+      /\/$/,
+      '',
+    );
+    const normalizedPath = photoPath.replace(/\\/g, '/');
+    const uploadsIndex = normalizedPath.lastIndexOf('/uploads/');
+
+    return uploadsIndex >= 0
+      ? normalizedPath.slice(uploadsIndex)
+      : `${uploadsPrefix}/${basename(normalizedPath)}`;
+  }
 
   async createOrganization(
     organizationAdminId: number,
@@ -436,7 +459,7 @@ export class OrganizationsService {
     organizationAdmin.photo = photo.path;
     await this.organizationAdminRepository.save(organizationAdmin);
 
-    return { photo: organizationAdmin.photo };
+    return { photo: this.mapProfilePhotoToPublicUrl(organizationAdmin.photo)! };
   }
 
   async updateAdminProfileInfo(
@@ -493,14 +516,17 @@ export class OrganizationsService {
     organizationId: number,
     offset: number = PAGINATION_CONSTANTS.DEFAULT_OFFSET,
     limit: number = PAGINATION_CONSTANTS.DEFAULT_LIMIT,
+    search?: string,
   ) {
     return this.getOrganizationList(
       organizationAdminId,
       organizationId,
       this.dataSource.getRepository(Building),
-      ['building_id', 'title', 'address'],
+      ['building_id', 'title', 'address', 'created_at'],
       offset,
       limit,
+      search,
+      'title',
     );
   }
 
@@ -509,15 +535,59 @@ export class OrganizationsService {
     organizationId: number,
     offset: number = PAGINATION_CONSTANTS.DEFAULT_OFFSET,
     limit: number = PAGINATION_CONSTANTS.DEFAULT_LIMIT,
+    employeeId: number,
+    search?: string,
   ) {
-    return this.getOrganizationList(
+    await this.organizationOwnershipValidator.validateOwnership(
       organizationAdminId,
       organizationId,
-      this.positionRepository,
-      ['position_id', 'role', 'description', 'created_at'],
-      offset,
-      limit,
     );
+
+    const positionsQuery = this.positionRepository
+      .createQueryBuilder('position')
+      .where('position.organization_id = :organizationId', { organizationId })
+      .orderBy('position.created_at', 'DESC')
+      .offset(offset)
+      .limit(limit);
+
+    if (search) {
+      positionsQuery.andWhere('position.role ILIKE :search', {
+        search: `%${search}%`,
+      });
+    }
+
+    const employee = await this.dataSource.getRepository(Employee).findOne({
+      where: { employee_id: employeeId },
+      relations: ['organizations', 'positions'],
+    });
+
+    if (!employee) {
+      throw new NotFoundException(
+        ORGANIZATIONS_CONSTANTS.ERROR_MESSAGES.EMPLOYEE_NOT_FOUND,
+      );
+    }
+
+    const belongsToOrganization = employee.organizations?.some(
+      (org) => org.organization_id === organizationId,
+    );
+
+    if (!belongsToOrganization) {
+      throw new BadRequestException(
+        ORGANIZATIONS_CONSTANTS.ERROR_MESSAGES.EMPLOYEE_NOT_IN_ORGANIZATION,
+      );
+    }
+
+    const assignedPositionIds = employee.positions?.map(
+      (position) => position.position_id,
+    );
+
+    if (assignedPositionIds && assignedPositionIds.length > 0) {
+      positionsQuery.andWhere('position.position_id NOT IN (:...positionIds)', {
+        positionIds: assignedPositionIds,
+      });
+    }
+
+    return positionsQuery.getMany();
   }
 
   async getRfidTagsList(
@@ -525,14 +595,17 @@ export class OrganizationsService {
     organizationId: number,
     offset: number = PAGINATION_CONSTANTS.DEFAULT_OFFSET,
     limit: number = PAGINATION_CONSTANTS.DEFAULT_LIMIT,
+    search?: string,
   ) {
     return this.getOrganizationList(
       organizationAdminId,
       organizationId,
       this.dataSource.getRepository(RfidTag),
-      ['rfid_tag_id', 'created_at'],
+      ['rfid_tag_id', 'name', 'tag_uid', 'created_at'],
       offset,
       limit,
+      search,
+      'name',
     );
   }
 
@@ -541,14 +614,17 @@ export class OrganizationsService {
     organizationId: number,
     offset: number = PAGINATION_CONSTANTS.DEFAULT_OFFSET,
     limit: number = PAGINATION_CONSTANTS.DEFAULT_LIMIT,
+    search?: string,
   ) {
     return this.getOrganizationList(
       organizationAdminId,
       organizationId,
       this.dataSource.getRepository(RfidReader),
-      ['rfid_reader_id', 'secret_token', 'created_at'],
+      ['rfid_reader_id', 'name', 'created_at'],
       offset,
       limit,
+      search,
+      'name',
     );
   }
 
@@ -631,7 +707,7 @@ export class OrganizationsService {
       full_name: orgAdmin.full_name,
       email: orgAdmin.email,
       phone: orgAdmin.phone,
-      photo: orgAdmin.photo,
+      photo: this.mapProfilePhotoToPublicUrl(orgAdmin.photo),
     };
   }
 
@@ -788,14 +864,24 @@ export class OrganizationsService {
     select: (keyof T)[],
     offset: number,
     limit: number,
+    search?: string,
+    searchField?: keyof T,
   ): Promise<T[]> {
     await this.organizationOwnershipValidator.validateOwnership(
       organizationAdminId,
       organizationId,
     );
 
+    const whereClause: Record<string, unknown> = {
+      organization: { organization_id: organizationId },
+    };
+
+    if (search && searchField) {
+      whereClause[String(searchField)] = ILike(`%${search}%`);
+    }
+
     return repository.find({
-      where: { organization: { organization_id: organizationId } } as never,
+      where: whereClause as never,
       select: select as never,
       skip: offset,
       take: limit,
@@ -924,7 +1010,6 @@ export class OrganizationsService {
       .getRepository(Employee)
       .createQueryBuilder('employee')
       .leftJoin('employee.organizations', 'org')
-      .leftJoinAndSelect('employee.positions', 'positions')
       .where('employee.employee_id = :memberId', { memberId })
       .andWhere('org.organization_id = :organizationId', { organizationId })
       .getOne();
@@ -942,9 +1027,57 @@ export class OrganizationsService {
       phone: employee.phone,
       photo: employee.photo,
       role: OrganizationMemberRole.EMPLOYEE,
-      positions: employee.positions || [],
       created_at: employee.created_at,
     };
+  }
+
+  async getMemberPositions(
+    userId: number,
+    userRole: UserRole,
+    organizationId: number,
+    memberId: number,
+    search?: string,
+    offset: number = PAGINATION_CONSTANTS.DEFAULT_OFFSET,
+    limit: number = PAGINATION_CONSTANTS.DEFAULT_LIMIT,
+  ) {
+    await this.validateOrganizationMembership(userId, userRole, organizationId);
+
+    const employee = await this.dataSource
+      .getRepository(Employee)
+      .createQueryBuilder('employee')
+      .leftJoin('employee.organizations', 'org')
+      .where('employee.employee_id = :memberId', { memberId })
+      .andWhere('org.organization_id = :organizationId', { organizationId })
+      .getOne();
+
+    if (!employee) {
+      throw new NotFoundException(
+        ORGANIZATIONS_CONSTANTS.ERROR_MESSAGES.EMPLOYEE_NOT_FOUND,
+      );
+    }
+
+    const positionsQuery = this.positionRepository
+      .createQueryBuilder('position')
+      .innerJoin(
+        'employee_positions_position',
+        'emp_pos',
+        'emp_pos."positionPositionId" = position.position_id',
+      )
+      .where('emp_pos."employeeEmployeeId" = :memberId', { memberId })
+      .andWhere('position.organization_id = :organizationId', {
+        organizationId,
+      })
+      .orderBy('position.created_at', 'DESC')
+      .offset(offset)
+      .limit(limit);
+
+    if (search) {
+      positionsQuery.andWhere('position.role ILIKE :search', {
+        search: `%${search}%`,
+      });
+    }
+
+    return positionsQuery.getMany();
   }
 
   async removeTagAdmin(

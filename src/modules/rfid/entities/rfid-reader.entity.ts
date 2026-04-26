@@ -19,6 +19,9 @@ export class RfidReader {
   @Column({ length: COLUMN_LENGTHS.SECRET_TOKEN })
   secret_token: string;
 
+  @Column({ length: COLUMN_LENGTHS.TITLE })
+  name: string;
+
   @CreateDateColumn()
   created_at: Date;
 

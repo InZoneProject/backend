@@ -40,6 +40,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '../auth/enums/user-role.enum';
 import { OrganizationMemberRole } from '../../shared/enums/organization-member-role.enum';
 import type { RequestWithUser } from '../auth/types/request-with-user.types';
+import { mapPhotoToAbsoluteUrl } from '../../shared/utils/photo-url.util';
 
 @ApiTags('Organizations')
 @Controller('organizations')
@@ -99,6 +100,13 @@ export class OrganizationsController {
       id,
       updateOrganizationDto,
     );
+  }
+
+  @Delete('profile')
+  @Roles(UserRole.ORGANIZATION_ADMIN)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deleteProfile(@Req() req: RequestWithUser): Promise<void> {
+    await this.organizationsService.deleteProfile(req.user.sub);
   }
 
   @Delete(':id')
@@ -192,10 +200,15 @@ export class OrganizationsController {
     @UploadedFile() photo: Express.Multer.File,
     @Req() req: RequestWithUser,
   ) {
-    return this.organizationsService.updateAdminProfilePhoto(
+    const response = await this.organizationsService.updateAdminProfilePhoto(
       req.user.sub,
       photo,
     );
+
+    return {
+      ...response,
+      photo: mapPhotoToAbsoluteUrl(response.photo, req),
+    };
   }
 
   @Patch('profile/info')
@@ -224,6 +237,7 @@ export class OrganizationsController {
 
   @Get(':id/buildings')
   @Roles(UserRole.ORGANIZATION_ADMIN)
+  @ApiQuery({ name: 'search', required: false })
   async getBuildingsList(
     @Param('id', ParseIntPipe) organizationId: number,
     @Query(
@@ -239,19 +253,23 @@ export class OrganizationsController {
     )
     limit: number,
     @Req() req: RequestWithUser,
+    @Query('search') search?: string,
   ) {
     return this.organizationsService.getBuildingsList(
       req.user.sub,
       organizationId,
       offset,
       limit,
+      search,
     );
   }
 
-  @Get(':id/positions')
+  @Get(':id/employees/:employeeId/unassigned-positions')
   @Roles(UserRole.ORGANIZATION_ADMIN)
+  @ApiQuery({ name: 'search', required: false })
   async getPositionsList(
     @Param('id', ParseIntPipe) organizationId: number,
+    @Param('employeeId', ParseIntPipe) employeeId: number,
     @Query(
       'offset',
       new DefaultValuePipe(PAGINATION_CONSTANTS.DEFAULT_OFFSET),
@@ -265,17 +283,21 @@ export class OrganizationsController {
     )
     limit: number,
     @Req() req: RequestWithUser,
+    @Query('search') search?: string,
   ) {
     return this.organizationsService.getPositionsList(
       req.user.sub,
       organizationId,
       offset,
       limit,
+      employeeId,
+      search,
     );
   }
 
   @Get(':id/rfid-tags')
   @Roles(UserRole.ORGANIZATION_ADMIN)
+  @ApiQuery({ name: 'search', required: false })
   async getRfidTagsList(
     @Param('id', ParseIntPipe) organizationId: number,
     @Query(
@@ -291,17 +313,20 @@ export class OrganizationsController {
     )
     limit: number,
     @Req() req: RequestWithUser,
+    @Query('search') search?: string,
   ) {
     return this.organizationsService.getRfidTagsList(
       req.user.sub,
       organizationId,
       offset,
       limit,
+      search,
     );
   }
 
   @Get(':id/rfid-readers')
   @Roles(UserRole.ORGANIZATION_ADMIN)
+  @ApiQuery({ name: 'search', required: false })
   async getRfidReadersList(
     @Param('id', ParseIntPipe) organizationId: number,
     @Query(
@@ -317,12 +342,14 @@ export class OrganizationsController {
     )
     limit: number,
     @Req() req: RequestWithUser,
+    @Query('search') search?: string,
   ) {
     return this.organizationsService.getRfidReadersList(
       req.user.sub,
       organizationId,
       offset,
       limit,
+      search,
     );
   }
 
@@ -359,14 +386,12 @@ export class OrganizationsController {
   @Get('profile')
   @Roles(UserRole.ORGANIZATION_ADMIN)
   async getProfile(@Req() req: RequestWithUser) {
-    return this.organizationsService.getProfile(req.user.sub);
-  }
+    const response = await this.organizationsService.getProfile(req.user.sub);
 
-  @Delete('profile')
-  @Roles(UserRole.ORGANIZATION_ADMIN)
-  @HttpCode(HttpStatus.NO_CONTENT)
-  async deleteProfile(@Req() req: RequestWithUser): Promise<void> {
-    await this.organizationsService.deleteProfile(req.user.sub);
+    return {
+      ...response,
+      photo: mapPhotoToAbsoluteUrl(response.photo, req),
+    };
   }
 
   @Get(':id/members')
@@ -381,9 +406,48 @@ export class OrganizationsController {
     @Query('offset', new DefaultValuePipe(0), ParseIntPipe) offset?: number,
     @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit?: number,
   ) {
-    return this.organizationsService.getOrganizationMembers(
+    const response = await this.organizationsService.getOrganizationMembers(
       req.user.sub,
       organizationId,
+      search,
+      offset,
+      limit,
+    );
+
+    return response.map((member) => ({
+      ...member,
+      photo: mapPhotoToAbsoluteUrl(member.photo, req),
+    }));
+  }
+
+  @Get(':organizationId/members/:memberId/positions')
+  @Roles(UserRole.ORGANIZATION_ADMIN, UserRole.TAG_ADMIN, UserRole.EMPLOYEE)
+  @ApiQuery({ name: 'search', required: false })
+  @ApiQuery({ name: 'offset', required: false })
+  @ApiQuery({ name: 'limit', required: false })
+  async getMemberPositions(
+    @Param('organizationId', ParseIntPipe) organizationId: number,
+    @Param('memberId', ParseIntPipe) memberId: number,
+    @Req() req: RequestWithUser,
+    @Query('search') search?: string,
+    @Query(
+      'offset',
+      new DefaultValuePipe(PAGINATION_CONSTANTS.DEFAULT_OFFSET),
+      ParseIntPipe,
+    )
+    offset?: number,
+    @Query(
+      'limit',
+      new DefaultValuePipe(PAGINATION_CONSTANTS.DEFAULT_LIMIT),
+      ParseIntPipe,
+    )
+    limit?: number,
+  ) {
+    return this.organizationsService.getMemberPositions(
+      req.user.sub,
+      req.user.role,
+      organizationId,
+      memberId,
       search,
       offset,
       limit,
@@ -399,13 +463,18 @@ export class OrganizationsController {
     role: OrganizationMemberRole,
     @Req() req: RequestWithUser,
   ) {
-    return this.organizationsService.getMemberProfile(
+    const response = await this.organizationsService.getMemberProfile(
       req.user.sub,
       req.user.role,
       organizationId,
       memberId,
       role,
     );
+
+    return {
+      ...response,
+      photo: mapPhotoToAbsoluteUrl(response.photo, req),
+    };
   }
 
   @Delete(':id/tag-admins/:tagAdminId')

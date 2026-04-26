@@ -10,6 +10,7 @@ import {
 import { TagAssignment } from '../../tag-admin/entities/tag-assignment.entity';
 import { ScanEvent } from './scan-event.entity';
 import { Organization } from '../../organizations/entities/organization.entity';
+import { COLUMN_LENGTHS } from '../../../shared/constants/column-lengths';
 
 @Entity()
 export class RfidTag {
@@ -18,6 +19,9 @@ export class RfidTag {
 
   @Column({ unique: true })
   tag_uid: number;
+
+  @Column({ length: COLUMN_LENGTHS.TITLE })
+  name: string;
 
   @CreateDateColumn()
   created_at: Date;

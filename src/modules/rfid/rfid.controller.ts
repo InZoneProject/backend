@@ -13,7 +13,6 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { RfidService } from './rfid.service';
-import { OrganizationIdDto } from '../../shared/dto/organization-id.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { EmailVerificationGuard } from '../auth/guards/email-verification.guard';
@@ -21,6 +20,8 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '../auth/enums/user-role.enum';
 import type { RequestWithUser } from '../auth/types/request-with-user.types';
 import { CreateRfidTagDto } from './dto/create-rfid-tag.dto';
+import { CreateRfidReaderDto } from './dto/create-rfid-reader.dto';
+import { UpdateRfidTagDto } from './dto/update-rfid-tag.dto';
 
 @ApiTags('RFID')
 @Controller('rfid')
@@ -32,7 +33,7 @@ export class RfidController {
   @Post('readers')
   @Roles(UserRole.ORGANIZATION_ADMIN)
   async createRfidReader(
-    @Body() createRfidReaderDto: OrganizationIdDto,
+    @Body() createRfidReaderDto: CreateRfidReaderDto,
     @Req() req: RequestWithUser,
   ) {
     const { rfid_reader, plain_token } =
@@ -42,6 +43,7 @@ export class RfidController {
       );
     return {
       rfid_reader_id: rfid_reader.rfid_reader_id,
+      name: rfid_reader.name,
       secret_token: plain_token,
       created_at: rfid_reader.created_at,
     };
@@ -74,6 +76,20 @@ export class RfidController {
     @Req() req: RequestWithUser,
   ): Promise<void> {
     await this.rfidService.deleteRfidTag(req.user.sub, tagId);
+  }
+
+  @Patch('tags/:id')
+  @Roles(UserRole.ORGANIZATION_ADMIN)
+  async updateRfidTag(
+    @Param('id', ParseIntPipe) tagId: number,
+    @Body() updateRfidTagDto: UpdateRfidTagDto,
+    @Req() req: RequestWithUser,
+  ) {
+    return this.rfidService.updateRfidTag(
+      req.user.sub,
+      tagId,
+      updateRfidTagDto,
+    );
   }
 
   @Patch('readers/:id/token')

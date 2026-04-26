@@ -15,7 +15,7 @@ import {
   BadRequestException,
   DefaultValuePipe,
 } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { AccessControlService } from './access-control.service';
 import { CreateZoneAccessRuleDto } from './dto/create-zone-access-rule.dto';
 import { UpdateZoneAccessRuleDto } from './dto/update-zone-access-rule.dto';
@@ -48,9 +48,11 @@ export class AccessControlController {
   }
 
   @Get('zone-access-rules')
+  @ApiQuery({ name: 'search', required: false })
   async getAllRules(
     @Req() req: RequestWithUser,
     @Query('organization_id') organizationId?: number,
+    @Query('search') search?: string,
     @Query(
       'offset',
       new DefaultValuePipe(PAGINATION_CONSTANTS.DEFAULT_OFFSET),
@@ -74,6 +76,7 @@ export class AccessControlController {
       +organizationId,
       offset,
       limit,
+      search,
     );
   }
 
@@ -100,11 +103,33 @@ export class AccessControlController {
   }
 
   @Get('zones/:zoneId/access-rules')
+  @ApiQuery({ name: 'search', required: false })
+  @ApiQuery({ name: 'offset', required: false })
+  @ApiQuery({ name: 'limit', required: false })
   async getZoneAccessRules(
     @Param('zoneId', ParseIntPipe) zoneId: number,
     @Req() req: RequestWithUser,
+    @Query('search') search?: string,
+    @Query(
+      'offset',
+      new DefaultValuePipe(PAGINATION_CONSTANTS.DEFAULT_OFFSET),
+      ParseIntPipe,
+    )
+    offset?: number,
+    @Query(
+      'limit',
+      new DefaultValuePipe(PAGINATION_CONSTANTS.DEFAULT_LIMIT),
+      ParseIntPipe,
+    )
+    limit?: number,
   ) {
-    return this.accessControlService.getZoneAccessRules(req.user.sub, zoneId);
+    return this.accessControlService.getZoneAccessRules(
+      req.user.sub,
+      zoneId,
+      search,
+      offset,
+      limit,
+    );
   }
 
   @Post('zones/:zoneId/rules/:ruleId/attach')

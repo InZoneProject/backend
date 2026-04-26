@@ -3,11 +3,12 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { RfidReader } from './entities/rfid-reader.entity';
 import { RfidTag } from './entities/rfid-tag.entity';
-import { OrganizationIdDto } from '../../shared/dto/organization-id.dto';
 import { OrganizationOwnershipValidator } from '../../shared/validators/organization-ownership.validator';
 import { TokenHashService } from '../../shared/services/token-hash.service';
 import { RFID_CONSTANTS } from './rfid.constants';
 import { CreateRfidTagDto } from './dto/create-rfid-tag.dto';
+import { CreateRfidReaderDto } from './dto/create-rfid-reader.dto';
+import { UpdateRfidTagDto } from './dto/update-rfid-tag.dto';
 
 @Injectable()
 export class RfidService {
@@ -22,7 +23,7 @@ export class RfidService {
 
   async createRfidReader(
     userId: number,
-    createRfidReaderDto: OrganizationIdDto,
+    createRfidReaderDto: CreateRfidReaderDto,
   ): Promise<{ rfid_reader: RfidReader; plain_token: string }> {
     await this.organizationOwnershipValidator.validateOwnership(
       userId,
@@ -34,6 +35,7 @@ export class RfidService {
 
     const rfidReader = this.rfidReaderRepository.create({
       secret_token: hashed_token,
+      name: createRfidReaderDto.name,
       organization: { organization_id: createRfidReaderDto.organization_id },
     });
 
@@ -54,6 +56,7 @@ export class RfidService {
     const rfidTag = this.rfidTagRepository.create({
       organization: { organization_id: createRfidTagDto.organization_id },
       tag_uid: createRfidTagDto.tag_uid,
+      name: createRfidTagDto.name,
     });
 
     return this.rfidTagRepository.save(rfidTag);
@@ -97,6 +100,32 @@ export class RfidService {
     );
 
     await this.rfidTagRepository.delete(tagId);
+  }
+
+  async updateRfidTag(
+    userId: number,
+    tagId: number,
+    updateRfidTagDto: UpdateRfidTagDto,
+  ): Promise<RfidTag> {
+    const tag = await this.rfidTagRepository.findOne({
+      where: { rfid_tag_id: tagId },
+      relations: ['organization'],
+    });
+
+    if (!tag) {
+      throw new NotFoundException(
+        RFID_CONSTANTS.ERROR_MESSAGES.RFID_TAG_NOT_FOUND,
+      );
+    }
+
+    await this.organizationOwnershipValidator.validateOwnership(
+      userId,
+      tag.organization.organization_id,
+    );
+
+    tag.name = updateRfidTagDto.name;
+
+    return this.rfidTagRepository.save(tag);
   }
 
   async regenerateReaderToken(

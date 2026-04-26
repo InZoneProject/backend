@@ -152,7 +152,13 @@ export class AccessControlService {
     await this.zoneAccessRuleRepository.remove(rule);
   }
 
-  async getZoneAccessRules(userId: number, zoneId: number) {
+  async getZoneAccessRules(
+    userId: number,
+    zoneId: number,
+    search?: string,
+    offset: number = PAGINATION_CONSTANTS.DEFAULT_OFFSET,
+    limit: number = PAGINATION_CONSTANTS.DEFAULT_LIMIT,
+  ) {
     const zone = await this.zoneRepository.findOne({
       where: { zone_id: zoneId },
       relations: ['building', 'building.organization'],
@@ -169,10 +175,22 @@ export class AccessControlService {
       zone.building.organization.organization_id,
     );
 
-    const assignments = await this.zoneRuleAssignmentRepository.find({
-      where: { zone: { zone_id: zoneId } },
-      relations: ['zone_access_rule', 'positions'],
-    });
+    const assignmentsQuery = this.zoneRuleAssignmentRepository
+      .createQueryBuilder('assignment')
+      .leftJoinAndSelect('assignment.zone_access_rule', 'zone_access_rule')
+      .leftJoinAndSelect('assignment.positions', 'positions')
+      .where('assignment.zone_id = :zoneId', { zoneId })
+      .orderBy('assignment.created_at', 'DESC')
+      .skip(offset)
+      .take(limit);
+
+    if (search) {
+      assignmentsQuery.andWhere('zone_access_rule.title ILIKE :search', {
+        search: `%${search}%`,
+      });
+    }
+
+    const assignments = await assignmentsQuery.getMany();
 
     return assignments.map((assignment) => ({
       zone_access_rule_id: assignment.zone_access_rule.zone_access_rule_id,
@@ -450,22 +468,27 @@ export class AccessControlService {
     organizationId: number,
     offset: number = PAGINATION_CONSTANTS.DEFAULT_OFFSET,
     limit: number = PAGINATION_CONSTANTS.DEFAULT_LIMIT,
+    search?: string,
   ) {
     await this.organizationOwnershipValidator.validateOwnership(
       userId,
       organizationId,
     );
 
-    const rules = await this.zoneAccessRuleRepository.find({
-      where: {
-        organization: { organization_id: organizationId },
-      },
-      skip: offset,
-      take: limit,
-      order: {
-        created_at: 'DESC',
-      },
-    });
+    const rulesQuery = this.zoneAccessRuleRepository
+      .createQueryBuilder('rule')
+      .where('rule.organization_id = :organizationId', { organizationId })
+      .orderBy('rule.created_at', 'DESC')
+      .skip(offset)
+      .take(limit);
+
+    if (search) {
+      rulesQuery.andWhere('rule.title ILIKE :search', {
+        search: `%${search}%`,
+      });
+    }
+
+    const rules = await rulesQuery.getMany();
 
     return await Promise.all(
       rules.map(async (rule) => {
