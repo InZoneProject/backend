@@ -5,14 +5,13 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import { ZoneAccessRule } from './entities/zone-access-rule.entity';
 import { ZoneRuleAssignment } from './entities/zone-rule-assignment.entity';
 import { Zone } from '../buildings/entities/zone.entity';
 import { Position } from '../organizations/entities/position.entity';
 import { CreateZoneAccessRuleDto } from './dto/create-zone-access-rule.dto';
 import { UpdateZoneAccessRuleDto } from './dto/update-zone-access-rule.dto';
-import { AttachRuleToZoneDto } from './dto/attach-rule-to-zone.dto';
 import { AccessType } from '../../shared/enums/access-type.enum';
 import { OrganizationOwnershipValidator } from '../../shared/validators/organization-ownership.validator';
 import { ACCESS_CONTROL_CONSTANTS } from './access-control.constants';
@@ -190,27 +189,83 @@ export class AccessControlService {
       });
     }
 
-    const assignments = await assignmentsQuery.getMany();
+    const [assignments, total] = await assignmentsQuery.getManyAndCount();
 
-    return assignments.map((assignment) => ({
-      zone_access_rule_id: assignment.zone_access_rule.zone_access_rule_id,
-      title: assignment.zone_access_rule.title,
-      access_type: assignment.zone_access_rule.access_type,
-      max_duration_minutes: assignment.zone_access_rule.max_duration_minutes,
-      positions:
-        assignment.positions?.map((p) => ({
-          position_id: p.position_id,
-          role: p.role,
-        })) || [],
-      created_at: assignment.created_at,
-    }));
+    return {
+      items: assignments.map((assignment) => ({
+        zone_access_rule_id: assignment.zone_access_rule.zone_access_rule_id,
+        title: assignment.zone_access_rule.title,
+        access_type: assignment.zone_access_rule.access_type,
+        max_duration_minutes: assignment.zone_access_rule.max_duration_minutes,
+        has_positions: (assignment.positions || []).length > 0,
+        created_at: assignment.created_at,
+      })),
+      total,
+      offset,
+      limit,
+    };
+  }
+
+  async getZoneUnassignedAccessRules(
+    userId: number,
+    zoneId: number,
+    search?: string,
+    offset: number = PAGINATION_CONSTANTS.DEFAULT_OFFSET,
+    limit: number = PAGINATION_CONSTANTS.DEFAULT_LIMIT,
+  ) {
+    const zone = await this.zoneRepository.findOne({
+      where: { zone_id: zoneId },
+      relations: ['building', 'building.organization'],
+    });
+
+    if (!zone) {
+      throw new NotFoundException(
+        ACCESS_CONTROL_CONSTANTS.ERROR_MESSAGES.ZONE_NOT_FOUND,
+      );
+    }
+
+    const organizationId = zone.building.organization.organization_id;
+    await this.organizationOwnershipValidator.validateOwnership(
+      userId,
+      organizationId,
+    );
+
+    const assignedRuleIdsQuery = this.zoneRuleAssignmentRepository
+      .createQueryBuilder('assignment')
+      .select('assignment.zone_access_rule_id')
+      .where('assignment.zone_id = :zoneId', { zoneId });
+
+    const rulesQuery = this.zoneAccessRuleRepository
+      .createQueryBuilder('rule')
+      .where('rule.organization_id = :organizationId', { organizationId })
+      .andWhere(
+        `rule.zone_access_rule_id NOT IN (${assignedRuleIdsQuery.getQuery()})`,
+      )
+      .setParameters(assignedRuleIdsQuery.getParameters())
+      .orderBy('rule.created_at', 'DESC')
+      .skip(offset)
+      .take(limit);
+
+    if (search) {
+      rulesQuery.andWhere('rule.title ILIKE :search', {
+        search: `%${search}%`,
+      });
+    }
+
+    const [items, total] = await rulesQuery.getManyAndCount();
+
+    return {
+      items,
+      total,
+      offset,
+      limit,
+    };
   }
 
   async attachRuleToZone(
     userId: number,
     ruleId: number,
     zoneId: number,
-    attachDto: AttachRuleToZoneDto,
   ): Promise<void> {
     const [rule, zone] = await Promise.all([
       this.zoneAccessRuleRepository.findOne({
@@ -262,33 +317,10 @@ export class AccessControlService {
       );
     }
 
-    const positions = await this.positionRepository.find({
-      where: { position_id: In(attachDto.position_ids) },
-      relations: ['organization'],
-    });
-
-    if (positions.length !== attachDto.position_ids.length) {
-      throw new NotFoundException(
-        ACCESS_CONTROL_CONSTANTS.ERROR_MESSAGES.POSITION_NOT_FOUND,
-      );
-    }
-
-    const allInOrganization = positions.every(
-      (p) =>
-        p.organization.organization_id ===
-        zone.building.organization.organization_id,
-    );
-
-    if (!allInOrganization) {
-      throw new BadRequestException(
-        ACCESS_CONTROL_CONSTANTS.ERROR_MESSAGES.POSITIONS_NOT_IN_ORGANIZATION,
-      );
-    }
-
     const assignment = this.zoneRuleAssignmentRepository.create({
       zone,
       zone_access_rule: rule,
-      positions,
+      positions: [],
     });
 
     await this.zoneRuleAssignmentRepository.save(assignment);
@@ -450,12 +482,6 @@ export class AccessControlService {
       );
     }
 
-    if (assignment.positions.length === 1) {
-      throw new BadRequestException(
-        ACCESS_CONTROL_CONSTANTS.ERROR_MESSAGES.CANNOT_REMOVE_LAST_POSITION,
-      );
-    }
-
     assignment.positions = assignment.positions.filter(
       (p) => p.position_id !== positionId,
     );
@@ -463,61 +489,78 @@ export class AccessControlService {
     await this.zoneRuleAssignmentRepository.save(assignment);
   }
 
-  async getAllRules(
+  async getRulePositions(
     userId: number,
-    organizationId: number,
+    zoneId: number,
+    ruleId: number,
+    assigned: boolean,
+    search?: string,
     offset: number = PAGINATION_CONSTANTS.DEFAULT_OFFSET,
     limit: number = PAGINATION_CONSTANTS.DEFAULT_LIMIT,
-    search?: string,
   ) {
+    const zone = await this.zoneRepository.findOne({
+      where: { zone_id: zoneId },
+      relations: ['building', 'building.organization'],
+    });
+
+    if (!zone) {
+      throw new NotFoundException(
+        ACCESS_CONTROL_CONSTANTS.ERROR_MESSAGES.ZONE_NOT_FOUND,
+      );
+    }
+
     await this.organizationOwnershipValidator.validateOwnership(
       userId,
-      organizationId,
+      zone.building.organization.organization_id,
     );
 
-    const rulesQuery = this.zoneAccessRuleRepository
-      .createQueryBuilder('rule')
-      .where('rule.organization_id = :organizationId', { organizationId })
-      .orderBy('rule.created_at', 'DESC')
+    const assignment = await this.zoneRuleAssignmentRepository.findOne({
+      where: {
+        zone: { zone_id: zoneId },
+        zone_access_rule: { zone_access_rule_id: ruleId },
+      },
+      relations: ['positions'],
+    });
+
+    if (!assignment) {
+      throw new NotFoundException(
+        ACCESS_CONTROL_CONSTANTS.ERROR_MESSAGES.ZONE_ACCESS_RULE_NOT_FOUND,
+      );
+    }
+
+    const positionIds = (assignment.positions || []).map(
+      (position) => position.position_id,
+    );
+
+    const positionsQuery = this.positionRepository
+      .createQueryBuilder('position')
+      .where('position.organization_id = :organizationId', {
+        organizationId: zone.building.organization.organization_id,
+      })
+      .orderBy('position.created_at', 'DESC')
       .skip(offset)
       .take(limit);
 
-    if (search) {
-      rulesQuery.andWhere('rule.title ILIKE :search', {
-        search: `%${search}%`,
-      });
+    if (positionIds.length > 0) {
+      positionsQuery.andWhere(
+        assigned
+          ? 'position.position_id IN (:...positionIds)'
+          : 'position.position_id NOT IN (:...positionIds)',
+        { positionIds },
+      );
+    } else if (assigned) {
+      positionsQuery.andWhere('1 = 0');
     }
 
-    const rules = await rulesQuery.getMany();
+    if (search) {
+      positionsQuery.andWhere(
+        '(position.role ILIKE :search OR position.description ILIKE :search)',
+        { search: `%${search}%` },
+      );
+    }
 
-    return await Promise.all(
-      rules.map(async (rule) => {
-        const assignments = await this.zoneRuleAssignmentRepository.find({
-          where: {
-            zone_access_rule: { zone_access_rule_id: rule.zone_access_rule_id },
-          },
-          relations: ['zone', 'positions'],
-        });
+    const [items, total] = await positionsQuery.getManyAndCount();
 
-        const zones = assignments.map((assignment) => ({
-          zone_id: assignment.zone.zone_id,
-          title: assignment.zone.title,
-          positions:
-            assignment.positions?.map((p) => ({
-              position_id: p.position_id,
-              role: p.role,
-            })) || [],
-        }));
-
-        return {
-          zone_access_rule_id: rule.zone_access_rule_id,
-          title: rule.title,
-          access_type: rule.access_type,
-          max_duration_minutes: rule.max_duration_minutes,
-          zones,
-          created_at: rule.created_at,
-        };
-      }),
-    );
+    return { items, total, offset, limit };
   }
 }

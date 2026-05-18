@@ -1,9 +1,10 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { FloorInfoDto } from './floor-info.dto';
-
 export class BuildingInfoResponseDto {
   @ApiProperty()
   building_id: number;
+
+  @ApiProperty()
+  organization_id: number;
 
   @ApiProperty()
   title: string;
@@ -11,6 +12,6 @@ export class BuildingInfoResponseDto {
   @ApiProperty({ nullable: true })
   address: string | null;
 
-  @ApiProperty({ type: [FloorInfoDto] })
-  floors: FloorInfoDto[];
+  @ApiProperty()
+  created_at: Date;
 }

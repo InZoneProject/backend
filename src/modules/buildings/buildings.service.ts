@@ -1,11 +1,18 @@
 import {
-  Injectable,
-  NotFoundException,
   BadRequestException,
   ConflictException,
+  Injectable,
+  NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource, EntityManager } from 'typeorm';
+import {
+  DataSource,
+  EntityManager,
+  ObjectLiteral,
+  Repository,
+  SelectQueryBuilder,
+} from 'typeorm';
 import { Zone } from './entities/zone.entity';
 import { Door } from './entities/door.entity';
 import { Building } from './entities/building.entity';
@@ -31,6 +38,32 @@ import { BuildingsMovementsMapper } from './buildings-movements.mapper';
 import { EmployeeDailyMovementsResponseDto } from './dto/employee-daily-movements-response.dto';
 import { EmployeeMovementItemDto } from './dto/employee-movement-item.dto';
 import { determineNewZoneById } from '../../shared/utils/zone-navigation.util';
+import { RedisService } from '../redis/redis.service';
+import { SCAN_STATE_CACHE_CONSTANTS } from '../mqtt/constants/scan-state-cache.constants';
+
+interface ViewportBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+interface FloorMapQueryOptions {
+  viewport?: ViewportBounds;
+  cursor?: number;
+  limit?: number;
+}
+
+interface FloorMapMeta {
+  limit: number;
+  next_cursor: number | null;
+  has_more: boolean;
+  is_lod: boolean;
+}
+
+export interface MapSeed {
+  viewport: ViewportBounds;
+}
 
 @Injectable()
 export class BuildingsService {
@@ -47,6 +80,8 @@ export class BuildingsService {
     private readonly organizationOwnershipValidator: OrganizationOwnershipValidator,
     private readonly fileValidator: FileValidator,
     private readonly dataSource: DataSource,
+    private readonly configService: ConfigService,
+    private readonly redisService: RedisService,
   ) {}
 
   async createBuilding(userId: number, createBuildingDto: CreateBuildingDto) {
@@ -116,6 +151,7 @@ export class BuildingsService {
       const newFloor = await this.createFloorWithNumber(
         buildingId,
         createFloorDto.floor_number,
+        createFloorDto.floor_name.trim(),
         manager,
       );
 
@@ -213,17 +249,75 @@ export class BuildingsService {
       this.zoneGeometryService.updateZoneGeometry(zone, updateDto, manager),
     );
 
-    if (!zone.floor) {
-      throw new BadRequestException(
-        BUILDINGS_CONSTANTS.ERROR_MESSAGES.ZONE_FLOOR_REQUIRED,
+    return;
+  }
+
+  async getZoneGeometryDependencies(
+    userId: number,
+    zoneId: number,
+    viewport?: ViewportBounds,
+  ) {
+    const zone = await this.findZoneWithOrganization(zoneId);
+
+    await this.organizationOwnershipValidator.validateOwnership(
+      userId,
+      zone.building.organization.organization_id,
+    );
+
+    const buildingId = zone.building.building_id;
+    const [allZones, allDoors] = await Promise.all([
+      this.zoneGeometryService.loadZonesForBuilding(buildingId),
+      this.dataSource.getRepository(Door).find({
+        where: { floor: { building: { building_id: buildingId } } },
+        relations: ['zone_from', 'zone_to', 'floor', 'rfid_reader'],
+      }),
+    ]);
+
+    const coordinatesMap =
+      this.zoneGeometryService.createCoordinatesMap(allZones);
+    const connectedZoneIds = new Set<number>([zoneId]);
+    const queue = [zoneId];
+
+    while (queue.length > 0) {
+      const currentZoneId = queue.shift()!;
+      const connectedZones = this.zoneGeometryService.findConnectedZones(
+        currentZoneId,
+        allDoors,
+        allZones,
+        coordinatesMap,
       );
+
+      for (const connectedZone of connectedZones) {
+        if (connectedZoneIds.has(connectedZone.zone_id)) continue;
+
+        connectedZoneIds.add(connectedZone.zone_id);
+        queue.push(connectedZone.zone_id);
+      }
     }
 
-    return this.getBuildingMap(
-      userId,
-      zone.building.building_id,
-      zone.floor.floor_id,
+    const visibleZoneIds = new Set(
+      this.filterZonesByViewport(allZones, viewport).map(
+        (item) => item.zone_id,
+      ),
     );
+    visibleZoneIds.add(zoneId);
+    const zones = allZones.filter(
+      (item) =>
+        connectedZoneIds.has(item.zone_id) && visibleZoneIds.has(item.zone_id),
+    );
+    const includedZoneIds = new Set(zones.map((item) => item.zone_id));
+    const doors = allDoors.filter((door) => {
+      const zoneFromIncluded = door.zone_from
+        ? includedZoneIds.has(door.zone_from.zone_id)
+        : false;
+      const zoneToIncluded = includedZoneIds.has(door.zone_to.zone_id);
+
+      return door.is_entrance
+        ? zoneToIncluded
+        : zoneFromIncluded && zoneToIncluded;
+    });
+
+    return { zones, doors };
   }
 
   async shiftBuildingZones(
@@ -242,17 +336,7 @@ export class BuildingsService {
       this.zoneGeometryService.shiftBuildingZones(zone, shiftDto, manager),
     );
 
-    if (!zone.floor) {
-      throw new BadRequestException(
-        BUILDINGS_CONSTANTS.ERROR_MESSAGES.ZONE_FLOOR_REQUIRED,
-      );
-    }
-
-    return this.getBuildingMap(
-      userId,
-      zone.building.building_id,
-      zone.floor.floor_id,
-    );
+    return;
   }
 
   async createEntranceDoor(
@@ -306,7 +390,7 @@ export class BuildingsService {
   async getBuildingInfo(userId: number, buildingId: number): Promise<Building> {
     const building = await this.buildingRepository.findOne({
       where: { building_id: buildingId },
-      relations: ['organization', 'floors'],
+      relations: ['organization'],
     });
 
     if (!building) {
@@ -321,6 +405,52 @@ export class BuildingsService {
     );
 
     return building;
+  }
+
+  async getBuildingFloors(
+    userId: number,
+    buildingId: number,
+    offset: number,
+    limit: number,
+    search?: string,
+  ) {
+    const building = await this.findBuildingWithRelations(buildingId);
+
+    await this.organizationOwnershipValidator.validateOwnership(
+      userId,
+      building.organization.organization_id,
+    );
+
+    const query = this.floorRepository
+      .createQueryBuilder('floor')
+      .where('floor.building_id = :buildingId', { buildingId });
+
+    if (search) {
+      query.andWhere('floor.floor_name ILIKE :search', {
+        search: `%${search}%`,
+      });
+    }
+
+    const [floors, total] = await query
+      .orderBy('floor.floor_number', 'ASC')
+      .offset(offset)
+      .limit(limit)
+      .getManyAndCount();
+
+    const items = await Promise.all(
+      floors.map(async (floor) => ({
+        floor_id: floor.floor_id,
+        floor_number: floor.floor_number,
+        floor_name: floor.floor_name,
+        can_delete: await this.canDeleteFloor(
+          floor.floor_id,
+          buildingId,
+          total,
+        ),
+      })),
+    );
+
+    return { items, total, offset, limit };
   }
 
   async updateBuilding(
@@ -468,6 +598,31 @@ export class BuildingsService {
     });
   }
 
+  async updateFloorName(
+    userId: number,
+    floorId: number,
+    floorName: string,
+  ): Promise<Floor> {
+    const floor = await this.floorRepository.findOne({
+      where: { floor_id: floorId },
+      relations: ['building', 'building.organization'],
+    });
+
+    if (!floor) {
+      throw new NotFoundException(
+        BUILDINGS_CONSTANTS.ERROR_MESSAGES.FLOOR_NOT_FOUND,
+      );
+    }
+
+    await this.organizationOwnershipValidator.validateOwnership(
+      userId,
+      floor.building.organization.organization_id,
+    );
+
+    floor.floor_name = floorName.trim();
+    return this.floorRepository.save(floor);
+  }
+
   async deleteEntranceDoor(userId: number, doorId: number): Promise<void> {
     const door = await this.findDoorWithRelations(doorId);
 
@@ -510,19 +665,78 @@ export class BuildingsService {
       door.zone_to.building.organization.organization_id,
     );
 
-    const doorsCount = await this.doorManagementService.countDoorsBetweenZones(
-      door.zone_from.zone_id,
-      door.zone_to.zone_id,
-      door.floor.floor_id,
-    );
+    const canDeleteWithoutDisconnecting =
+      await this.canDeleteRegularDoorWithoutDisconnectingBuilding(
+        doorId,
+        door.zone_to.building.building_id,
+      );
 
-    if (doorsCount === 1) {
+    if (!canDeleteWithoutDisconnecting) {
       throw new BadRequestException(
-        BUILDINGS_CONSTANTS.ERROR_MESSAGES.CANNOT_DELETE_LAST_DOOR_BETWEEN_ZONES,
+        BUILDINGS_CONSTANTS.ERROR_MESSAGES.CANNOT_DELETE_DOOR_WOULD_DISCONNECT_BUILDING,
       );
     }
 
     await this.doorManagementService.deleteDoor(doorId);
+  }
+
+  private async canDeleteRegularDoorWithoutDisconnectingBuilding(
+    doorId: number,
+    buildingId: number,
+  ): Promise<boolean> {
+    const zones = await this.zoneRepository.find({
+      where: { building: { building_id: buildingId } },
+    });
+
+    if (zones.length <= 1) {
+      return true;
+    }
+
+    const regularDoors = await this.dataSource.getRepository(Door).find({
+      where: {
+        zone_to: { building: { building_id: buildingId } },
+        is_entrance: false,
+      },
+      relations: ['zone_from', 'zone_to'],
+    });
+
+    const filteredDoors = regularDoors.filter(
+      (door) => door.door_id !== doorId && door.zone_from,
+    );
+
+    if (filteredDoors.length === 0) {
+      return false;
+    }
+
+    const adjacency = new Map<number, Set<number>>();
+
+    for (const zone of zones) {
+      adjacency.set(zone.zone_id, new Set());
+    }
+
+    for (const door of filteredDoors) {
+      if (!door.zone_from) continue;
+
+      adjacency.get(door.zone_from.zone_id)?.add(door.zone_to.zone_id);
+      adjacency.get(door.zone_to.zone_id)?.add(door.zone_from.zone_id);
+    }
+
+    const startZoneId = zones[0].zone_id;
+    const visited = new Set<number>([startZoneId]);
+    const queue = [startZoneId];
+
+    while (queue.length > 0) {
+      const currentZoneId = queue.shift()!;
+
+      for (const nextZoneId of adjacency.get(currentZoneId) || []) {
+        if (visited.has(nextZoneId)) continue;
+
+        visited.add(nextZoneId);
+        queue.push(nextZoneId);
+      }
+    }
+
+    return visited.size === zones.length;
   }
 
   private async createBuildingEntity(
@@ -574,10 +788,12 @@ export class BuildingsService {
   private async createFloorWithNumber(
     buildingId: number,
     floorNumber: number,
+    floorName: string,
     manager: EntityManager,
   ): Promise<Floor> {
     const newFloor = manager.create(Floor, {
       floor_number: floorNumber,
+      floor_name: floorName,
       building: { building_id: buildingId },
     });
 
@@ -590,6 +806,7 @@ export class BuildingsService {
   ): Promise<Floor> {
     const firstFloor = manager.create(Floor, {
       building: building,
+      floor_name: 'Новий поверх',
     });
 
     return manager.save(firstFloor);
@@ -784,10 +1001,19 @@ export class BuildingsService {
       );
 
       if (intersectingZones.length > 0) {
-        const targetZone = intersectingZones[0];
+        const targetZone =
+          intersectingZones.find(
+            (item) => item.zone_id === createZoneDto.zone_from_id,
+          ) ?? intersectingZones[0];
 
         if (createZoneDto.is_transition_between_floors) {
-          await this.createDoorsForTransitionZone(newZone, buildingId, manager);
+          await this.createDoorBetweenZones(
+            targetZone,
+            newZone,
+            createZoneDto.floor_id,
+            buildingId,
+            manager,
+          );
         } else {
           await this.createDoorBetweenZones(
             targetZone,
@@ -801,99 +1027,6 @@ export class BuildingsService {
     }
 
     return newZone;
-  }
-
-  private async createDoorsForTransitionZone(
-    newTransitionZone: Zone,
-    buildingId: number,
-    manager: EntityManager,
-  ): Promise<void> {
-    const floors = await manager.find(Floor, {
-      where: { building: { building_id: buildingId } },
-    });
-
-    const newZoneRect = this.createRectangleFromZone(newTransitionZone);
-
-    for (const floor of floors) {
-      const zonesOnFloor = await manager.find(Zone, {
-        where: [
-          {
-            floor: { floor_id: floor.floor_id },
-            building: { building_id: buildingId },
-          },
-          {
-            is_transition_between_floors: true,
-            building: { building_id: buildingId },
-          },
-        ],
-      });
-
-      const existingZonesOnFloor = zonesOnFloor.filter(
-        (z) => z.zone_id !== newTransitionZone.zone_id,
-      );
-
-      let hasIntersectionOnThisFloor = false;
-      let zoneToConnectWith: Zone | null = null;
-
-      for (const existingZone of existingZonesOnFloor) {
-        const existingZoneRect = this.createRectangleFromZone(existingZone);
-        const intersection = this.zoneGeometryValidator.calculateIntersection(
-          newZoneRect,
-          existingZoneRect,
-        );
-
-        if (
-          intersection.hasIntersection &&
-          intersection.intersectionLength >=
-            BUILDINGS_CONSTANTS.ZONE.MIN_INTERSECTION
-        ) {
-          hasIntersectionOnThisFloor = true;
-          zoneToConnectWith = existingZone;
-          break;
-        }
-      }
-
-      if (hasIntersectionOnThisFloor && zoneToConnectWith) {
-        const existingDoorsOnFloor = await manager.find(Door, {
-          where: [
-            {
-              zone_from: { zone_id: newTransitionZone.zone_id },
-              floor: { floor_id: floor.floor_id },
-            },
-            {
-              zone_to: { zone_id: newTransitionZone.zone_id },
-              floor: { floor_id: floor.floor_id },
-            },
-          ],
-        });
-
-        if (existingDoorsOnFloor.length === 0) {
-          await this.createSingleDoor(
-            zoneToConnectWith,
-            newTransitionZone,
-            floor.floor_id,
-            manager,
-          );
-        }
-      }
-    }
-  }
-
-  private async createSingleDoor(
-    zone1: Zone,
-    zone2: Zone,
-    floorId: number,
-    manager: EntityManager,
-  ): Promise<void> {
-    const door = manager.create(Door, {
-      zone_from: zone1,
-      zone_to: zone2,
-      is_entrance: false,
-      entrance_door_side: null,
-      floor: { floor_id: floorId },
-    });
-
-    await manager.save(door);
   }
 
   private async createDoorBetweenZones(
@@ -1116,39 +1249,414 @@ export class BuildingsService {
     }
   }
 
-  async getBuildingMap(userId: number, buildingId: number, floorId: number) {
-    const building = await this.buildingRepository.findOne({
-      where: { building_id: buildingId },
-      relations: ['organization'],
+  private async canDeleteFloor(
+    floorId: number,
+    buildingId: number,
+    floorsCount: number,
+  ): Promise<boolean> {
+    if (floorsCount <= 1) return false;
+
+    try {
+      await this.validateFloorDeletion(floorId, buildingId);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async getBuildingMap(
+    userId: number,
+    buildingId: number | null,
+    floorId: number,
+    options: FloorMapQueryOptions = {},
+  ) {
+    const floor = await this.floorRepository.findOne({
+      where:
+        buildingId === null
+          ? { floor_id: floorId }
+          : { floor_id: floorId, building: { building_id: buildingId } },
+      relations: ['building', 'building.organization'],
     });
 
-    if (!building) {
+    if (!floor) {
       throw new NotFoundException(
-        BUILDINGS_CONSTANTS.ERROR_MESSAGES.BUILDING_NOT_FOUND,
+        BUILDINGS_CONSTANTS.ERROR_MESSAGES.FLOOR_NOT_FOUND,
+      );
+    }
+
+    const resolvedBuildingId = floor.building.building_id;
+
+    await this.organizationOwnershipValidator.validateOwnership(
+      userId,
+      floor.building.organization.organization_id,
+    );
+
+    const limit = this.resolveMapLimit(options.limit);
+    const viewport = options.viewport;
+    const isLod = this.isLodViewport(viewport);
+    const zonesPage = await this.loadVisibleZonesPage(
+      resolvedBuildingId,
+      floorId,
+      limit,
+      options.cursor,
+      viewport,
+    );
+    const zones = zonesPage.items;
+    const transitionValidationZones = await this.loadTransitionValidationZones(
+      resolvedBuildingId,
+      limit,
+      viewport,
+    );
+    const visibleZoneIds = new Set(zones.map((zone) => zone.zone_id));
+    const transitionValidationZoneIds = new Set(
+      transitionValidationZones.map((zone) => zone.zone_id),
+    );
+    const [doors, transitionValidationDoors, zoneClusters] = await Promise.all([
+      this.loadDoorsForZoneIds(floorId, [...visibleZoneIds]),
+      this.loadDoorsForZoneIds(
+        null,
+        [...transitionValidationZoneIds],
+        resolvedBuildingId,
+      ),
+      isLod && viewport
+        ? this.loadZoneClusters(resolvedBuildingId, floorId, viewport)
+        : Promise.resolve([]),
+    ]);
+    const deletableZoneIds = await this.getDeletableZoneIds(
+      zones,
+      resolvedBuildingId,
+    );
+    const deletableDoorIds = await this.getDeletableDoorIds(
+      doors,
+      resolvedBuildingId,
+    );
+    const mapMeta: FloorMapMeta = {
+      limit,
+      next_cursor: zonesPage.nextCursor,
+      has_more: zonesPage.hasMore,
+      is_lod: isLod,
+    };
+
+    return {
+      zones,
+      doors,
+      transitionValidationZones,
+      transitionValidationDoors,
+      deletableZoneIds,
+      deletableDoorIds,
+      mapMeta,
+      zoneClusters,
+    };
+  }
+
+  async getBuildingMapSeed(
+    userId: number,
+    buildingId: number | null,
+    floorId: number,
+  ): Promise<MapSeed> {
+    const floor = await this.floorRepository.findOne({
+      where:
+        buildingId === null
+          ? { floor_id: floorId }
+          : { floor_id: floorId, building: { building_id: buildingId } },
+      relations: ['building', 'building.organization'],
+    });
+
+    if (!floor) {
+      throw new NotFoundException(
+        BUILDINGS_CONSTANTS.ERROR_MESSAGES.FLOOR_NOT_FOUND,
       );
     }
 
     await this.organizationOwnershipValidator.validateOwnership(
       userId,
-      building.organization.organization_id,
+      floor.building.organization.organization_id,
     );
 
-    await this.validateFloorExists(floorId, buildingId);
-
-    const [zones, doors] = await Promise.all([
-      this.zoneGeometryService.loadZonesForBuilding(buildingId, floorId, true),
-      this.dataSource.getRepository(Door).find({
-        where: {
-          floor: {
-            floor_id: floorId,
-            building: { building_id: buildingId },
-          },
+    const seedZone = await this.zoneRepository
+      .createQueryBuilder('zone')
+      .leftJoin('zone.floor', 'zone_floor')
+      .leftJoin('zone.building', 'building')
+      .where('building.building_id = :buildingId', {
+        buildingId: floor.building.building_id,
+      })
+      .andWhere(
+        '(zone_floor.floor_id = :floorId OR zone.is_transition_between_floors = true)',
+        {
+          floorId,
         },
-        relations: ['zone_from', 'zone_to', 'floor'],
-      }),
-    ]);
+      )
+      .orderBy('zone.zone_id', 'ASC')
+      .getOne();
 
-    return { zones, doors };
+    if (!seedZone) {
+      return {
+        viewport: {
+          x: 0,
+          y: 0,
+          width: this.getPositiveNumberConfig('MAP_EMPTY_VIEWPORT_WIDTH'),
+          height: this.getPositiveNumberConfig('MAP_EMPTY_VIEWPORT_HEIGHT'),
+        },
+      };
+    }
+
+    const padding = this.getPositiveNumberConfig('MAP_SEED_VIEWPORT_PADDING');
+    return {
+      viewport: {
+        x: seedZone.x_coordinate - padding,
+        y: seedZone.y_coordinate - padding,
+        width: seedZone.width + padding * 2,
+        height: seedZone.height + padding * 2,
+      },
+    };
+  }
+
+  private resolveMapLimit(requestedLimit?: number): number {
+    const configuredLimit = this.getPositiveNumberConfig(
+      'MAP_VIEWPORT_ZONE_LIMIT',
+    );
+
+    return requestedLimit && requestedLimit > 0
+      ? Math.min(requestedLimit, configuredLimit)
+      : configuredLimit;
+  }
+
+  private isLodViewport(viewport?: ViewportBounds): boolean {
+    if (!viewport) return false;
+
+    const threshold = this.getPositiveNumberConfig(
+      'MAP_VIEWPORT_LOD_AREA_THRESHOLD',
+    );
+
+    return viewport.width * viewport.height >= threshold;
+  }
+
+  private applyViewportFilter<T extends ObjectLiteral>(
+    query: SelectQueryBuilder<T>,
+    alias: string,
+    viewport?: ViewportBounds,
+  ): SelectQueryBuilder<T> {
+    if (!viewport) return query;
+
+    return query
+      .andWhere(`${alias}.x_coordinate < :viewportRight`, {
+        viewportRight: viewport.x + viewport.width,
+      })
+      .andWhere(`${alias}.x_coordinate + ${alias}.width > :viewportX`, {
+        viewportX: viewport.x,
+      })
+      .andWhere(`${alias}.y_coordinate < :viewportBottom`, {
+        viewportBottom: viewport.y + viewport.height,
+      })
+      .andWhere(`${alias}.y_coordinate + ${alias}.height > :viewportY`, {
+        viewportY: viewport.y,
+      });
+  }
+
+  private async loadVisibleZonesPage(
+    buildingId: number,
+    floorId: number,
+    limit: number,
+    cursor?: number,
+    viewport?: ViewportBounds,
+  ) {
+    let query = this.zoneRepository
+      .createQueryBuilder('zone')
+      .leftJoinAndSelect('zone.floor', 'floor')
+      .leftJoin('zone.building', 'building')
+      .where('building.building_id = :buildingId', { buildingId })
+      .andWhere(
+        '(floor.floor_id = :floorId OR zone.is_transition_between_floors = true)',
+        {
+          floorId,
+        },
+      );
+
+    query = this.applyViewportFilter(query, 'zone', viewport);
+
+    if (cursor && cursor > 0) {
+      query.andWhere('zone.zone_id > :cursor', { cursor });
+    }
+
+    const items = await query
+      .orderBy('zone.zone_id', 'ASC')
+      .take(limit + 1)
+      .getMany();
+    const hasMore = items.length > limit;
+    const visibleItems = hasMore ? items.slice(0, limit) : items;
+
+    return {
+      items: visibleItems,
+      hasMore,
+      nextCursor: hasMore
+        ? visibleItems[visibleItems.length - 1].zone_id
+        : null,
+    };
+  }
+
+  private async loadTransitionValidationZones(
+    buildingId: number,
+    limit: number,
+    viewport?: ViewportBounds,
+  ): Promise<Zone[]> {
+    let query = this.zoneRepository
+      .createQueryBuilder('zone')
+      .leftJoinAndSelect('zone.floor', 'floor')
+      .leftJoin('zone.building', 'building')
+      .where('building.building_id = :buildingId', { buildingId });
+
+    query = this.applyViewportFilter(query, 'zone', viewport);
+
+    return query.orderBy('zone.zone_id', 'ASC').take(limit).getMany();
+  }
+
+  private async loadDoorsForZoneIds(
+    floorId: number | null,
+    zoneIds: number[],
+    buildingId?: number,
+  ): Promise<Door[]> {
+    if (zoneIds.length === 0) return [];
+
+    const query = this.dataSource
+      .getRepository(Door)
+      .createQueryBuilder('door')
+      .leftJoinAndSelect('door.zone_from', 'zone_from')
+      .leftJoinAndSelect('door.zone_to', 'zone_to')
+      .leftJoinAndSelect('door.floor', 'floor')
+      .leftJoinAndSelect('door.rfid_reader', 'rfid_reader')
+      .where(
+        '(zone_from.zone_id IN (:...zoneIds) OR zone_to.zone_id IN (:...zoneIds))',
+        {
+          zoneIds,
+        },
+      );
+
+    if (floorId !== null) {
+      query.andWhere('floor.floor_id = :floorId', { floorId });
+    }
+
+    if (buildingId !== undefined) {
+      query
+        .leftJoin('floor.building', 'building')
+        .andWhere('building.building_id = :buildingId', { buildingId });
+    }
+
+    return query.orderBy('door.door_id', 'ASC').getMany();
+  }
+
+  private async loadZoneClusters(
+    buildingId: number,
+    floorId: number,
+    viewport: ViewportBounds,
+  ) {
+    const clusterSize = this.getPositiveNumberConfig(
+      'MAP_VIEWPORT_LOD_CLUSTER_SIZE',
+    );
+
+    const rows = await this.zoneRepository
+      .createQueryBuilder('zone')
+      .leftJoin('zone.floor', 'floor')
+      .leftJoin('zone.building', 'building')
+      .select(
+        `FLOOR(zone.x_coordinate / :clusterSize) * :clusterSize`,
+        'x_coordinate',
+      )
+      .addSelect(
+        `FLOOR(zone.y_coordinate / :clusterSize) * :clusterSize`,
+        'y_coordinate',
+      )
+      .addSelect('COUNT(zone.zone_id)', 'zones_count')
+      .where('building.building_id = :buildingId', { buildingId })
+      .andWhere(
+        '(floor.floor_id = :floorId OR zone.is_transition_between_floors = true)',
+        {
+          floorId,
+        },
+      )
+      .andWhere('zone.x_coordinate < :viewportRight', {
+        viewportRight: viewport.x + viewport.width,
+      })
+      .andWhere('zone.x_coordinate + zone.width > :viewportX', {
+        viewportX: viewport.x,
+      })
+      .andWhere('zone.y_coordinate < :viewportBottom', {
+        viewportBottom: viewport.y + viewport.height,
+      })
+      .andWhere('zone.y_coordinate + zone.height > :viewportY', {
+        viewportY: viewport.y,
+      })
+      .setParameter('clusterSize', clusterSize)
+      .groupBy('FLOOR(zone.x_coordinate / :clusterSize)')
+      .addGroupBy('FLOOR(zone.y_coordinate / :clusterSize)')
+      .orderBy('x_coordinate', 'ASC')
+      .addOrderBy('y_coordinate', 'ASC')
+      .getRawMany<{
+        x_coordinate: string;
+        y_coordinate: string;
+        zones_count: string;
+      }>();
+
+    return rows.map((row) => ({
+      x_coordinate: Number(row.x_coordinate),
+      y_coordinate: Number(row.y_coordinate),
+      width: clusterSize,
+      height: clusterSize,
+      zones_count: Number(row.zones_count),
+    }));
+  }
+
+  private getPositiveNumberConfig(key: string): number {
+    const value = Number(this.configService.getOrThrow<string>(key));
+    if (!Number.isFinite(value) || value <= 0) {
+      throw new Error(`${key} must be a positive number`);
+    }
+
+    return value;
+  }
+
+  private async getDeletableZoneIds(
+    zones: Zone[],
+    buildingId: number,
+  ): Promise<number[]> {
+    const deletableZoneIds: number[] = [];
+    for (const zone of zones) {
+      try {
+        await this.validateZoneDeletion(zone.zone_id, buildingId);
+        deletableZoneIds.push(zone.zone_id);
+      } catch {
+        // The map only needs to know whether the delete action is available.
+      }
+    }
+    return deletableZoneIds;
+  }
+
+  private async getDeletableDoorIds(
+    doors: Door[],
+    buildingId: number,
+  ): Promise<number[]> {
+    const totalEntranceDoors =
+      await this.countEntranceDoorsInBuilding(buildingId);
+    const deletableDoorIds: number[] = [];
+
+    for (const door of doors) {
+      if (door.is_entrance) {
+        if (totalEntranceDoors > 1) deletableDoorIds.push(door.door_id);
+        continue;
+      }
+
+      if (!door.zone_from) continue;
+
+      if (
+        await this.canDeleteRegularDoorWithoutDisconnectingBuilding(
+          door.door_id,
+          buildingId,
+        )
+      ) {
+        deletableDoorIds.push(door.door_id);
+      }
+    }
+
+    return deletableDoorIds;
   }
 
   async deleteZone(userId: number, zoneId: number): Promise<void> {
@@ -1391,8 +1899,105 @@ export class BuildingsService {
 
   async getCurrentEmployeeLocations(
     userId: number,
-    buildingId: number,
+    buildingId: number | null,
     floorId: number,
+    viewport?: ViewportBounds,
+  ) {
+    const floor = await this.floorRepository.findOne({
+      where:
+        buildingId === null
+          ? { floor_id: floorId }
+          : { floor_id: floorId, building: { building_id: buildingId } },
+      relations: ['building', 'building.organization'],
+    });
+
+    if (!floor) {
+      throw new NotFoundException(
+        BUILDINGS_CONSTANTS.ERROR_MESSAGES.FLOOR_NOT_FOUND,
+      );
+    }
+
+    const resolvedBuildingId = floor.building.building_id;
+
+    await this.organizationOwnershipValidator.validateOwnership(
+      userId,
+      floor.building.organization.organization_id,
+    );
+
+    const visibleZones = this.filterZonesByViewport(
+      await this.zoneGeometryService.loadZonesForBuilding(
+        resolvedBuildingId,
+        floorId,
+        true,
+      ),
+      viewport,
+    );
+    const visibleZoneIds = new Set(visibleZones.map((zone) => zone.zone_id));
+    if (visibleZoneIds.size === 0) {
+      return [];
+    }
+
+    const employees = await this.dataSource
+      .getRepository(Employee)
+      .createQueryBuilder('employee')
+      .innerJoin(
+        'employee.organizations',
+        'organization',
+        'organization.organization_id = :organizationId',
+        { organizationId: floor.building.organization.organization_id },
+      )
+      .select([
+        'employee.employee_id',
+        'employee.full_name',
+        'employee.email',
+        'employee.photo',
+      ])
+      .getMany();
+
+    if (employees.length === 0) {
+      return [];
+    }
+
+    const cacheKeys = employees.map((employee) =>
+      SCAN_STATE_CACHE_CONSTANTS.KEYS.CURRENT_ZONE(employee.employee_id),
+    );
+    const currentZoneByCacheKey = await this.redisService.getStrings(cacheKeys);
+
+    return employees
+      .map((employee) => {
+        const cachedZoneId = currentZoneByCacheKey.get(
+          SCAN_STATE_CACHE_CONSTANTS.KEYS.CURRENT_ZONE(employee.employee_id),
+        );
+        if (
+          cachedZoneId === undefined ||
+          cachedZoneId === null ||
+          cachedZoneId === 'null'
+        ) {
+          return null;
+        }
+
+        const zoneId = Number(cachedZoneId);
+        if (!Number.isFinite(zoneId) || !visibleZoneIds.has(zoneId)) {
+          return null;
+        }
+
+        return {
+          employee_id: employee.employee_id,
+          zone_id: zoneId,
+          full_name: employee.full_name,
+          email: employee.email,
+          photo: employee.photo,
+        };
+      })
+      .filter((item): item is NonNullable<typeof item> => item !== null);
+  }
+
+  async getCurrentBuildingEmployees(
+    userId: number,
+    buildingId: number,
+    search: string = '',
+    offset: number = 0,
+    limit: number = 20,
   ) {
     const building = await this.buildingRepository.findOne({
       where: { building_id: buildingId },
@@ -1410,32 +2015,19 @@ export class BuildingsService {
       building.organization.organization_id,
     );
 
-    await this.validateFloorExists(floorId, buildingId);
-
     const doorRepository = this.dataSource.getRepository(Door);
     const scanEventRepository = this.dataSource.getRepository(ScanEvent);
-
     const doors = await doorRepository.find({
-      where: {
-        floor: { building: { building_id: buildingId }, floor_id: floorId },
-      },
-      relations: ['rfid_reader', 'zone_from', 'zone_to'],
+      where: { floor: { building: { building_id: buildingId } } },
+      relations: ['rfid_reader', 'zone_from', 'zone_to', 'zone_to.floor'],
     });
-
-    if (doors.length === 0) {
-      return [];
-    }
-
     const readerIds = doors
       .map((door) => door.rfid_reader?.rfid_reader_id)
       .filter((id): id is number => id !== undefined);
 
     if (readerIds.length === 0) {
-      return [];
+      return { items: [], total: 0, offset, limit };
     }
-
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
 
     const scans = await scanEventRepository
       .createQueryBuilder('scan_event')
@@ -1444,67 +2036,232 @@ export class BuildingsService {
       .leftJoinAndSelect('tag_assignment.employee', 'employee')
       .leftJoinAndSelect('scan_event.rfid_reader', 'rfid_reader')
       .where('rfid_reader.rfid_reader_id IN (:...readerIds)', { readerIds })
-      .andWhere('scan_event.created_at >= :startOfDay', { startOfDay })
       .orderBy('scan_event.created_at', 'ASC')
       .getMany();
 
     const employeeScansMap = new Map<number, ScanEvent[]>();
+    const employeesMap = new Map<number, Employee>();
+    const latestScanAtMap = new Map<number, Date>();
+    const doorMap = new Map(
+      doors.map((door) => [door.rfid_reader?.rfid_reader_id, door]),
+    );
 
     for (const scan of scans) {
       const assignment = scan.rfid_tag.tag_assignments[0];
-      if (!assignment || !assignment.employee) continue;
+      if (!assignment?.employee) continue;
 
-      const empId = assignment.employee.employee_id;
-      const existingScans = employeeScansMap.get(empId);
-
-      if (existingScans) {
-        existingScans.push(scan);
-      } else {
-        employeeScansMap.set(empId, [scan]);
-      }
+      const employeeId = assignment.employee.employee_id;
+      employeesMap.set(employeeId, assignment.employee);
+      latestScanAtMap.set(employeeId, scan.created_at);
+      const employeeScans = employeeScansMap.get(employeeId) || [];
+      employeeScans.push(scan);
+      employeeScansMap.set(employeeId, employeeScans);
     }
 
-    const employeeLocations = new Map<number, number | null>();
-    const doorMap = new Map(
-      doors.map((d) => [d.rfid_reader?.rfid_reader_id, d]),
+    const items = Array.from(employeeScansMap.entries())
+      .map(([employeeId, employeeScans]) => {
+        let currentZoneId: number | null = null;
+        let currentDoor: Door | null = null;
+
+        for (const scan of employeeScans) {
+          const door = doorMap.get(scan.rfid_reader.rfid_reader_id);
+          if (!door) continue;
+
+          currentDoor = door;
+          currentZoneId = determineNewZoneById(
+            currentZoneId,
+            door.zone_from?.zone_id ?? null,
+            door.zone_to.zone_id,
+          );
+        }
+
+        const employee = employeesMap.get(employeeId);
+        if (!employee || currentZoneId === null || !currentDoor) return null;
+        const zone =
+          currentDoor.zone_to.zone_id === currentZoneId
+            ? currentDoor.zone_to
+            : currentDoor.zone_from;
+        if (!zone) return null;
+
+        return {
+          employee_id: employee.employee_id,
+          full_name: employee.full_name,
+          email: employee.email,
+          phone: employee.phone,
+          photo: employee.photo,
+          zone_id: currentZoneId,
+          zone_title: zone.title,
+          floor_id: zone.floor?.floor_id ?? null,
+          last_scan_at: latestScanAtMap.get(employeeId) ?? null,
+        };
+      })
+      .filter((item): item is NonNullable<typeof item> => item !== null)
+      .filter((item) => {
+        const query = search.trim().toLowerCase();
+        if (!query) return true;
+        return [
+          item.full_name,
+          item.email,
+          item.phone || '',
+          item.zone_title,
+        ].some((value) => value.toLowerCase().includes(query));
+      })
+      .sort(
+        (first, second) =>
+          new Date(second.last_scan_at || 0).getTime() -
+          new Date(first.last_scan_at || 0).getTime(),
+      );
+
+    return {
+      items: items.slice(offset, offset + limit),
+      total: items.length,
+      offset,
+      limit,
+    };
+  }
+
+  async getCurrentFloorEmployees(
+    userId: number,
+    floorId: number,
+    search: string = '',
+    offset: number = 0,
+    limit: number = 20,
+  ) {
+    const floor = await this.floorRepository.findOne({
+      where: { floor_id: floorId },
+      relations: ['building', 'building.organization'],
+    });
+
+    if (!floor) {
+      throw new NotFoundException(
+        BUILDINGS_CONSTANTS.ERROR_MESSAGES.FLOOR_NOT_FOUND,
+      );
+    }
+
+    await this.organizationOwnershipValidator.validateOwnership(
+      userId,
+      floor.building.organization.organization_id,
     );
 
-    for (const [employeeId, employeeScans] of employeeScansMap) {
-      let currentZoneId: number | null = null;
-
-      for (const scan of employeeScans) {
-        const door = doorMap.get(scan.rfid_reader.rfid_reader_id);
-        if (!door) continue;
-
-        const zoneFromId = door.zone_from?.zone_id ?? null;
-        const zoneToId = door.zone_to.zone_id;
-
-        if (zoneFromId === null) {
-          if (currentZoneId === zoneToId) {
-            currentZoneId = null;
-          } else {
-            currentZoneId = zoneToId;
-          }
-        } else {
-          if (currentZoneId === zoneToId) {
-            currentZoneId = zoneFromId;
-          } else if (currentZoneId === zoneFromId) {
-            currentZoneId = zoneToId;
-          } else {
-            currentZoneId = zoneToId;
-          }
-        }
-      }
-
-      employeeLocations.set(employeeId, currentZoneId);
+    const zones = await this.zoneGeometryService.loadZonesForBuilding(
+      floor.building.building_id,
+      floorId,
+      true,
+    );
+    const zonesById = new Map(zones.map((zone) => [zone.zone_id, zone]));
+    if (zonesById.size === 0) {
+      return { items: [], total: 0, offset, limit };
     }
 
-    return Array.from(employeeLocations.entries())
-      .filter(([, zone_id]) => zone_id !== null)
-      .map(([employee_id, zone_id]) => ({
-        employee_id,
-        zone_id,
-      }));
+    const employees = await this.dataSource
+      .getRepository(Employee)
+      .createQueryBuilder('employee')
+      .innerJoin(
+        'employee.organizations',
+        'organization',
+        'organization.organization_id = :organizationId',
+        { organizationId: floor.building.organization.organization_id },
+      )
+      .select([
+        'employee.employee_id',
+        'employee.full_name',
+        'employee.email',
+        'employee.photo',
+      ])
+      .getMany();
+
+    if (employees.length === 0) {
+      return { items: [], total: 0, offset, limit };
+    }
+
+    const cacheKeys = employees.map((employee) =>
+      SCAN_STATE_CACHE_CONSTANTS.KEYS.CURRENT_ZONE(employee.employee_id),
+    );
+    const currentZoneByCacheKey = await this.redisService.getStrings(cacheKeys);
+    const query = search.trim().toLowerCase();
+
+    const items = employees
+      .map((employee) => {
+        const cachedZoneId = currentZoneByCacheKey.get(
+          SCAN_STATE_CACHE_CONSTANTS.KEYS.CURRENT_ZONE(employee.employee_id),
+        );
+        if (
+          cachedZoneId === undefined ||
+          cachedZoneId === null ||
+          cachedZoneId === 'null'
+        ) {
+          return null;
+        }
+
+        const currentZoneId = Number(cachedZoneId);
+        const zone = Number.isFinite(currentZoneId)
+          ? zonesById.get(currentZoneId)
+          : null;
+        if (!zone) return null;
+
+        const zoneFloorId = zone.floor?.floor_id ?? floorId;
+        return {
+          employee_id: employee.employee_id,
+          full_name: employee.full_name,
+          email: employee.email,
+          photo: employee.photo,
+          zone_id: currentZoneId,
+          zone_title: zone.title,
+          floor_id: zoneFloorId,
+          last_scan_at: null,
+        };
+      })
+      .filter((item): item is NonNullable<typeof item> => item !== null)
+      .filter((item) => {
+        if (!query) return true;
+        return [item.full_name, item.email, item.zone_title].some((value) =>
+          value.toLowerCase().includes(query),
+        );
+      })
+      .sort(
+        (first, second) =>
+          new Date(second.last_scan_at || 0).getTime() -
+          new Date(first.last_scan_at || 0).getTime(),
+      );
+
+    return {
+      items: items.slice(offset, offset + limit),
+      total: items.length,
+      offset,
+      limit,
+    };
+  }
+
+  private filterZonesByViewport(
+    zones: Zone[],
+    viewport?: ViewportBounds,
+  ): Zone[] {
+    if (
+      !viewport ||
+      viewport.x === undefined ||
+      viewport.y === undefined ||
+      viewport.width === undefined ||
+      viewport.height === undefined
+    ) {
+      return zones;
+    }
+
+    const viewportRight = viewport.x + viewport.width;
+    const viewportBottom = viewport.y + viewport.height;
+
+    return zones
+      .filter((zone) => {
+        const zoneRight = zone.x_coordinate + zone.width;
+        const zoneBottom = zone.y_coordinate + zone.height;
+
+        const intersectsX =
+          zone.x_coordinate < viewportRight && zoneRight > viewport.x;
+        const intersectsY =
+          zone.y_coordinate < viewportBottom && zoneBottom > viewport.y;
+
+        return intersectsX && intersectsY;
+      })
+      .slice(0, BUILDINGS_CONSTANTS.MAP.MAX_VIEWPORT_ZONES);
   }
 
   async getEmployeeDailyMovements(
@@ -1550,6 +2307,15 @@ export class BuildingsService {
       );
     }
 
+    const cacheKey = BUILDINGS_CONSTANTS.CACHE.DAILY_MOVEMENTS_KEY(
+      buildingId,
+      employeeId,
+      date,
+    );
+    const cachedResponse =
+      await this.redisService.get<EmployeeDailyMovementsResponseDto>(cacheKey);
+    if (cachedResponse) return cachedResponse;
+
     const { startOfDay, endOfDay } = this.parseDateRange(date);
 
     const doors = await this.dataSource
@@ -1568,11 +2334,17 @@ export class BuildingsService {
       .filter((id): id is number => id !== undefined);
 
     if (readerIds.length === 0) {
-      return BuildingsMovementsMapper.toDailyMovementsResponse(
+      const emptyResponse = BuildingsMovementsMapper.toDailyMovementsResponse(
         employee,
         [],
         [],
       );
+      await this.redisService.set(
+        cacheKey,
+        emptyResponse,
+        BUILDINGS_CONSTANTS.CACHE.DAILY_MOVEMENTS_TTL_SECONDS,
+      );
+      return emptyResponse;
     }
 
     const scans = await this.dataSource
@@ -1640,13 +2412,19 @@ export class BuildingsService {
       .orderBy('notification.created_at', 'ASC')
       .getMany();
 
-    return BuildingsMovementsMapper.toDailyMovementsResponse(
+    const response = BuildingsMovementsMapper.toDailyMovementsResponse(
       employee,
       movements,
       violations.map((notification) =>
         BuildingsMovementsMapper.toViolation(notification),
       ),
     );
+    await this.redisService.set(
+      cacheKey,
+      response,
+      BUILDINGS_CONSTANTS.CACHE.DAILY_MOVEMENTS_TTL_SECONDS,
+    );
+    return response;
   }
 
   private parseDateRange(date: string): { startOfDay: Date; endOfDay: Date } {

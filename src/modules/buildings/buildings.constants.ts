@@ -4,6 +4,19 @@ export const BUILDINGS_CONSTANTS = {
     MIN_HEIGHT: 2,
     MIN_INTERSECTION: 2,
     DOOR_SIZE: 2,
+    ENTRANCE_DOOR_CLEARANCE: 2,
+  },
+  MAP: {
+    MAX_VIEWPORT_ZONES: 2000,
+  },
+  CACHE: {
+    DAILY_MOVEMENTS_TTL_SECONDS: 30,
+    DAILY_MOVEMENTS_KEY: (
+      buildingId: number,
+      employeeId: number,
+      date: string,
+    ) =>
+      `buildings:${buildingId}:employees:${employeeId}:daily-movements:${date}`,
   },
   LOG_MESSAGES: {
     FAILED_TO_DELETE_PHOTO: 'Failed to delete photo file:',
@@ -52,6 +65,8 @@ export const BUILDINGS_CONSTANTS = {
       'Cannot delete the last entrance door in the building',
     CANNOT_DELETE_LAST_DOOR_BETWEEN_ZONES:
       'Cannot delete the last door between these zones',
+    CANNOT_DELETE_DOOR_WOULD_DISCONNECT_BUILDING:
+      'Cannot delete door: would disconnect zones in the building',
     DOOR_NOT_FOUND: 'Door not found',
     CANNOT_DELETE_FLOOR_WITH_LAST_ENTRANCE_DOOR:
       'Cannot delete floor: it contains the last entrance door in the building',

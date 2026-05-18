@@ -49,6 +49,47 @@ export class ZoneGeometryValidator {
     };
   }
 
+  private getEntranceDoorBlockedSegment(
+    zoneRect: Rectangle,
+    otherRect: Rectangle,
+    side: DoorSide,
+  ): { start: number; end: number } | null {
+    const clearance = BUILDINGS_CONSTANTS.ZONE.ENTRANCE_DOOR_CLEARANCE;
+    const total = this.getSideCoordinates(zoneRect, side);
+    let distanceFromDoorSide: number;
+    let start: number;
+    let end: number;
+
+    if (side === DoorSide.RIGHT) {
+      distanceFromDoorSide = otherRect.x - (zoneRect.x + zoneRect.width);
+      start = otherRect.y - clearance;
+      end = otherRect.y + otherRect.height + clearance;
+    } else if (side === DoorSide.LEFT) {
+      distanceFromDoorSide = zoneRect.x - (otherRect.x + otherRect.width);
+      start = otherRect.y - clearance;
+      end = otherRect.y + otherRect.height + clearance;
+    } else if (side === DoorSide.BOTTOM) {
+      distanceFromDoorSide = otherRect.y - (zoneRect.y + zoneRect.height);
+      start = otherRect.x - clearance;
+      end = otherRect.x + otherRect.width + clearance;
+    } else {
+      distanceFromDoorSide = zoneRect.y - (otherRect.y + otherRect.height);
+      start = otherRect.x - clearance;
+      end = otherRect.x + otherRect.width + clearance;
+    }
+
+    if (distanceFromDoorSide < 0 || distanceFromDoorSide > clearance) {
+      return null;
+    }
+
+    const clamped = {
+      start: Math.max(total.start, start),
+      end: Math.min(total.end, end),
+    };
+
+    return clamped.end > clamped.start ? clamped : null;
+  }
+
   private mergeSegments(
     segments: Array<{ start: number; end: number }>,
   ): Array<{ start: number; end: number }> {
@@ -198,14 +239,9 @@ export class ZoneGeometryValidator {
       return false;
     }
 
-    if (
-      zone1.y + zone1.height <= zone2.y ||
-      zone2.y + zone2.height <= zone1.y
-    ) {
-      return false;
-    }
-
-    return true;
+    return !(
+      zone1.y + zone1.height <= zone2.y || zone2.y + zone2.height <= zone1.y
+    );
   }
 
   validateHasIntersectionWithAtLeastOneZone(
@@ -288,19 +324,12 @@ export class ZoneGeometryValidator {
         height: otherZone.height,
       };
 
-      const intersection = this.calculateIntersection(zoneRect, otherRect);
-
-      if (
-        intersection.hasIntersection &&
-        intersection.side === entranceDoorSide
-      ) {
-        const segment = this.calculateSegmentIntersection(
-          zoneRect,
-          otherRect,
-          entranceDoorSide,
-        );
-        occupiedSegments.push(segment);
-      }
+      const segment = this.getEntranceDoorBlockedSegment(
+        zoneRect,
+        otherRect,
+        entranceDoorSide,
+      );
+      if (segment) occupiedSegments.push(segment);
     }
 
     const doorsOnSameSide = existingEntranceDoors.filter(
@@ -359,33 +388,20 @@ export class ZoneGeometryValidator {
         height: otherZone.height,
       };
 
-      const intersection = this.calculateIntersection(existingRect, otherRect);
-
-      if (
-        intersection.hasIntersection &&
-        intersection.side === entranceDoorSide
-      ) {
-        const segment = this.calculateSegmentIntersection(
-          existingRect,
-          otherRect,
-          entranceDoorSide,
-        );
-        occupiedSegments.push(segment);
-      }
-    }
-
-    const newIntersection = this.calculateIntersection(existingRect, newZone);
-    if (
-      newIntersection.hasIntersection &&
-      newIntersection.side === entranceDoorSide
-    ) {
-      const segment = this.calculateSegmentIntersection(
+      const segment = this.getEntranceDoorBlockedSegment(
         existingRect,
-        newZone,
+        otherRect,
         entranceDoorSide,
       );
-      occupiedSegments.push(segment);
+      if (segment) occupiedSegments.push(segment);
     }
+
+    const newSegment = this.getEntranceDoorBlockedSegment(
+      existingRect,
+      newZone,
+      entranceDoorSide,
+    );
+    if (newSegment) occupiedSegments.push(newSegment);
 
     const doorsOnSameSide = existingEntranceDoors.filter(
       (door) => door.entrance_door_side === entranceDoorSide,

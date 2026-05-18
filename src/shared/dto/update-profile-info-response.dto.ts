@@ -5,5 +5,5 @@ export class UpdateProfileInfoResponseDto {
   name: string;
 
   @ApiPropertyOptional()
-  phone_number?: string;
+  phone: string | null;
 }

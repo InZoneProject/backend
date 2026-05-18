@@ -19,6 +19,7 @@ export class Building {
   building_id: number;
 
   @Column({
+    type: 'varchar',
     length: COLUMN_LENGTHS.TITLE,
     default: DEFAULT_VALUES.BUILDING_TITLE,
   })

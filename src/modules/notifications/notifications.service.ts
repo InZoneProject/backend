@@ -9,6 +9,9 @@ import { Zone } from '../buildings/entities/zone.entity';
 import { NOTIFICATION_CONSTANTS } from './notifications.constants';
 import { NotificationResponseDto } from './dto/notification-response.dto';
 import { AdminNotificationResponseDto } from './dto/admin-notification-response.dto';
+import { RedisService } from '../redis/redis.service';
+import { NOTIFICATIONS_CACHE_CONSTANTS } from './notifications-cache.constants';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class NotificationsService {
@@ -17,6 +20,8 @@ export class NotificationsService {
     private readonly notificationRepository: Repository<Notification>,
     @InjectRepository(Organization)
     private readonly organizationRepository: Repository<Organization>,
+    private readonly redisService: RedisService,
+    private readonly configService: ConfigService,
   ) {}
 
   async createNotification(
@@ -31,7 +36,14 @@ export class NotificationsService {
       employee,
       zone,
     });
-    return this.notificationRepository.save(notification);
+    const savedNotification =
+      await this.notificationRepository.save(notification);
+
+    if (title === NOTIFICATION_CONSTANTS.TITLES.TIME_LIMIT_EXCEEDED) {
+      await this.cacheLastTimeLimitNotification(savedNotification);
+    }
+
+    return savedNotification;
   }
 
   async getLastNotification(
@@ -39,8 +51,23 @@ export class NotificationsService {
     zoneId: number,
   ): Promise<Notification | null> {
     const startOfDay = this.getStartOfDay();
+    const cachedNotificationId = await this.redisService.getString(
+      NOTIFICATIONS_CACHE_CONSTANTS.KEYS.LAST_TIME_LIMIT(
+        employeeId,
+        zoneId,
+        this.getDayKey(startOfDay),
+      ),
+    );
 
-    return this.notificationRepository.findOne({
+    if (cachedNotificationId !== null) {
+      const notification = await this.notificationRepository.findOne({
+        where: { notification_id: Number(cachedNotificationId) },
+      });
+
+      if (notification) return notification;
+    }
+
+    const notification = await this.notificationRepository.findOne({
       where: {
         employee: { employee_id: employeeId },
         zone: { zone_id: zoneId },
@@ -51,6 +78,22 @@ export class NotificationsService {
         created_at: 'DESC',
       },
     });
+
+    if (notification) {
+      await this.redisService.setString(
+        NOTIFICATIONS_CACHE_CONSTANTS.KEYS.LAST_TIME_LIMIT(
+          employeeId,
+          zoneId,
+          this.getDayKey(notification.created_at),
+        ),
+        String(notification.notification_id),
+        this.getPositiveNumberConfig(
+          'NOTIFICATION_LAST_TIME_LIMIT_TTL_SECONDS',
+        ),
+      );
+    }
+
+    return notification;
   }
 
   async markAllAsReadByEmployee(employeeId: number): Promise<void> {
@@ -94,29 +137,35 @@ export class NotificationsService {
     employeeId: number,
     offset: number = PAGINATION_CONSTANTS.DEFAULT_OFFSET,
     limit: number = PAGINATION_CONSTANTS.DEFAULT_LIMIT,
-  ): Promise<NotificationResponseDto[]> {
-    const notifications = await this.notificationRepository.find({
-      where: { employee: { employee_id: employeeId } },
-      order: { created_at: 'DESC' },
-      skip: offset,
-      take: limit,
-    });
+  ) {
+    const [notifications, total] =
+      await this.notificationRepository.findAndCount({
+        where: { employee: { employee_id: employeeId } },
+        order: { created_at: 'DESC' },
+        skip: offset,
+        take: limit,
+      });
 
-    return notifications.map((n) => this.mapToNotificationResponse(n));
+    return {
+      items: notifications.map((n) => this.mapToNotificationResponse(n)),
+      total,
+      offset,
+      limit,
+    };
   }
 
   async getAdminNotifications(
     userId: number,
     offset: number = PAGINATION_CONSTANTS.DEFAULT_OFFSET,
     limit: number = PAGINATION_CONSTANTS.DEFAULT_LIMIT,
-  ): Promise<AdminNotificationResponseDto[]> {
+  ) {
     const organizationIds = await this.getAdminOrganizationIds(userId);
 
     if (organizationIds.length === 0) {
-      return [];
+      return { items: [], total: 0, offset, limit };
     }
 
-    const notifications = await this.notificationRepository
+    const [notifications, total] = await this.notificationRepository
       .createQueryBuilder('notification')
       .innerJoinAndSelect('notification.employee', 'employee')
       .innerJoin('notification.zone', 'zone')
@@ -127,9 +176,14 @@ export class NotificationsService {
       .orderBy('notification.created_at', 'DESC')
       .skip(offset)
       .take(limit)
-      .getMany();
+      .getManyAndCount();
 
-    return notifications.map((n) => this.mapToAdminNotificationResponse(n));
+    return {
+      items: notifications.map((n) => this.mapToAdminNotificationResponse(n)),
+      total,
+      offset,
+      limit,
+    };
   }
 
   async getEmployeeUnreadCount(employeeId: number): Promise<number> {
@@ -174,6 +228,33 @@ export class NotificationsService {
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
     return startOfDay;
+  }
+
+  private getDayKey(date: Date): string {
+    return date.toISOString().slice(0, 10);
+  }
+
+  private async cacheLastTimeLimitNotification(
+    notification: Notification,
+  ): Promise<void> {
+    await this.redisService.setString(
+      NOTIFICATIONS_CACHE_CONSTANTS.KEYS.LAST_TIME_LIMIT(
+        notification.employee.employee_id,
+        notification.zone.zone_id,
+        this.getDayKey(notification.created_at),
+      ),
+      String(notification.notification_id),
+      this.getPositiveNumberConfig('NOTIFICATION_LAST_TIME_LIMIT_TTL_SECONDS'),
+    );
+  }
+
+  private getPositiveNumberConfig(key: string): number {
+    const value = Number(this.configService.getOrThrow<string>(key));
+    if (!Number.isFinite(value) || value <= 0) {
+      throw new Error(`${key} must be a positive number`);
+    }
+
+    return value;
   }
 
   private mapToNotificationResponse(

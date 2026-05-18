@@ -10,30 +10,26 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: ⬇️ Checkout code
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: ⚙️ Setup Docker Image Name
+      - name: Setup Docker image name
         run: |
-          # Беремо назву репозиторію (напр. User/Repo), переводимо в нижній регістр
           REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
-          # Формуємо повну назву образу
           IMAGE_NAME=ghcr.io/$REPO_LOWER:latest
-          # Зберігаємо це в змінні оточення для наступних кроків
           echo "DOCKER_IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
-          echo "Image name will be: $IMAGE_NAME"
 
-      - name: 🏗️ Set up Docker Buildx
+      - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: 🔑 Login to GitHub Container Registry (GHCR)
+      - name: Login to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.PAT }}
 
-      - name: 🔨 Build and Push Docker Image
+      - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -43,28 +39,19 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: 🚀 Deploy to VPS via SSH
+      - name: Deploy to VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USERNAME }}
-          password: ${{ secrets.VPS_PASSWORD }}
+          key: ${{ secrets.VPS_SSH_KEY }}
           script: |
-            echo "--- Перехід до робочої директорії ---"
             cd ${{ secrets.PROD_COMPOSE_PATH }}
 
-            echo "--- Логін до GitHub Container Registry на VPS ---"
             echo ${{ secrets.PAT }} | docker login ghcr.io -u ${{ secrets.DOCKERHUB_USERNAME }} --password-stdin
-            
-            echo "--- Завантаження нового образу: ${{ env.DOCKER_IMAGE_NAME }} ---"
-            
-            # Оновлюємо сервіс backend
-            # Ми передаємо ім'я образу як змінну оточення прямо в команду docker compose
+
             DOCKER_IMAGE_NAME=${{ env.DOCKER_IMAGE_NAME }} docker compose -f docker-compose.prod.yml --env-file .env.prod pull backend
-            
+
             DOCKER_IMAGE_NAME=${{ env.DOCKER_IMAGE_NAME }} docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --remove-orphans backend
-            
-            echo "--- Очищення ---"
+
             docker image prune -f
-            
-            echo "✅ Деплой успішно завершено!"

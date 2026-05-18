@@ -12,6 +12,9 @@ export class OrganizationMemberRawDto {
   email: string;
 
   @ApiProperty({ nullable: true })
+  phone: string | null;
+
+  @ApiProperty({ nullable: true })
   photo: string | null;
 
   @ApiProperty({ enum: OrganizationMemberRole })

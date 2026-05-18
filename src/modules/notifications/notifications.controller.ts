@@ -19,8 +19,6 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '../auth/enums/user-role.enum';
 import type { RequestWithUser } from '../auth/types/request-with-user.types';
 import { PAGINATION_CONSTANTS } from '../../shared/constants/pagination.constants';
-import { NotificationResponseDto } from './dto/notification-response.dto';
-import { AdminNotificationResponseDto } from './dto/admin-notification-response.dto';
 
 @ApiTags('Notifications')
 @Controller('notifications')
@@ -59,7 +57,7 @@ export class NotificationsController {
       ParseIntPipe,
     )
     limit?: number,
-  ): Promise<NotificationResponseDto[]> {
+  ) {
     return this.notificationsService.getEmployeeNotifications(
       req.user.sub,
       offset,
@@ -83,7 +81,7 @@ export class NotificationsController {
       ParseIntPipe,
     )
     limit?: number,
-  ): Promise<AdminNotificationResponseDto[]> {
+  ) {
     return this.notificationsService.getAdminNotifications(
       req.user.sub,
       offset,

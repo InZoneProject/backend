@@ -17,22 +17,43 @@ export class TagAdmin {
   @PrimaryGeneratedColumn()
   tag_admin_id: number;
 
-  @Column({ length: COLUMN_LENGTHS.FULL_NAME })
+  @Column({
+    type: 'varchar',
+    length: COLUMN_LENGTHS.FULL_NAME,
+  })
   full_name: string;
 
-  @Column({ unique: true, length: COLUMN_LENGTHS.EMAIL })
+  @Column({
+    type: 'varchar',
+    unique: true,
+    length: COLUMN_LENGTHS.EMAIL,
+  })
   email: string;
 
-  @Column({ length: COLUMN_LENGTHS.PASSWORD })
+  @Column({
+    type: 'varchar',
+    length: COLUMN_LENGTHS.PASSWORD,
+  })
   password: string;
 
-  @Column({ length: COLUMN_LENGTHS.PHONE, nullable: true })
-  phone: string;
+  @Column({
+    type: 'varchar',
+    length: COLUMN_LENGTHS.PHONE,
+    nullable: true,
+  })
+  phone: string | null;
 
-  @Column({ length: COLUMN_LENGTHS.PHOTO, nullable: true })
-  photo: string;
+  @Column({
+    type: 'varchar',
+    length: COLUMN_LENGTHS.PHOTO,
+    nullable: true,
+  })
+  photo: string | null;
 
-  @Column({ default: false })
+  @Column({
+    type: 'boolean',
+    default: false,
+  })
   is_email_verified: boolean;
 
   @CreateDateColumn()

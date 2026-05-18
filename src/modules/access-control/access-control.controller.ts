@@ -12,14 +12,12 @@ import {
   HttpCode,
   HttpStatus,
   Query,
-  BadRequestException,
   DefaultValuePipe,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { AccessControlService } from './access-control.service';
 import { CreateZoneAccessRuleDto } from './dto/create-zone-access-rule.dto';
 import { UpdateZoneAccessRuleDto } from './dto/update-zone-access-rule.dto';
-import { AttachRuleToZoneDto } from './dto/attach-rule-to-zone.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { EmailVerificationGuard } from '../auth/guards/email-verification.guard';
@@ -44,39 +42,6 @@ export class AccessControlController {
     return this.accessControlService.createZoneAccessRule(
       req.user.sub,
       createDto,
-    );
-  }
-
-  @Get('zone-access-rules')
-  @ApiQuery({ name: 'search', required: false })
-  async getAllRules(
-    @Req() req: RequestWithUser,
-    @Query('organization_id') organizationId?: number,
-    @Query('search') search?: string,
-    @Query(
-      'offset',
-      new DefaultValuePipe(PAGINATION_CONSTANTS.DEFAULT_OFFSET),
-      ParseIntPipe,
-    )
-    offset?: number,
-    @Query(
-      'limit',
-      new DefaultValuePipe(PAGINATION_CONSTANTS.DEFAULT_LIMIT),
-      ParseIntPipe,
-    )
-    limit?: number,
-  ) {
-    if (!organizationId) {
-      throw new BadRequestException(
-        'organization_id query parameter is required',
-      );
-    }
-    return this.accessControlService.getAllRules(
-      req.user.sub,
-      +organizationId,
-      offset,
-      limit,
-      search,
     );
   }
 
@@ -132,19 +97,113 @@ export class AccessControlController {
     );
   }
 
+  @Get('zones/:zoneId/unassigned-access-rules')
+  @ApiQuery({ name: 'search', required: false })
+  @ApiQuery({ name: 'offset', required: false })
+  @ApiQuery({ name: 'limit', required: false })
+  async getZoneUnassignedAccessRules(
+    @Param('zoneId', ParseIntPipe) zoneId: number,
+    @Req() req: RequestWithUser,
+    @Query('search') search?: string,
+    @Query(
+      'offset',
+      new DefaultValuePipe(PAGINATION_CONSTANTS.DEFAULT_OFFSET),
+      ParseIntPipe,
+    )
+    offset?: number,
+    @Query(
+      'limit',
+      new DefaultValuePipe(PAGINATION_CONSTANTS.DEFAULT_LIMIT),
+      ParseIntPipe,
+    )
+    limit?: number,
+  ) {
+    return this.accessControlService.getZoneUnassignedAccessRules(
+      req.user.sub,
+      zoneId,
+      search,
+      offset,
+      limit,
+    );
+  }
+
   @Post('zones/:zoneId/rules/:ruleId/attach')
   @HttpCode(HttpStatus.NO_CONTENT)
   async attachRuleToZone(
     @Param('zoneId', ParseIntPipe) zoneId: number,
     @Param('ruleId', ParseIntPipe) ruleId: number,
-    @Body() attachDto: AttachRuleToZoneDto,
     @Req() req: RequestWithUser,
   ): Promise<void> {
     await this.accessControlService.attachRuleToZone(
       req.user.sub,
       ruleId,
       zoneId,
-      attachDto,
+    );
+  }
+
+  @Get('zones/:zoneId/rules/:ruleId/positions')
+  @ApiQuery({ name: 'search', required: false })
+  @ApiQuery({ name: 'offset', required: false })
+  @ApiQuery({ name: 'limit', required: false })
+  async getAssignedRulePositions(
+    @Param('zoneId', ParseIntPipe) zoneId: number,
+    @Param('ruleId', ParseIntPipe) ruleId: number,
+    @Req() req: RequestWithUser,
+    @Query('search') search?: string,
+    @Query(
+      'offset',
+      new DefaultValuePipe(PAGINATION_CONSTANTS.DEFAULT_OFFSET),
+      ParseIntPipe,
+    )
+    offset?: number,
+    @Query(
+      'limit',
+      new DefaultValuePipe(PAGINATION_CONSTANTS.DEFAULT_LIMIT),
+      ParseIntPipe,
+    )
+    limit?: number,
+  ) {
+    return this.accessControlService.getRulePositions(
+      req.user.sub,
+      zoneId,
+      ruleId,
+      true,
+      search,
+      offset,
+      limit,
+    );
+  }
+
+  @Get('zones/:zoneId/rules/:ruleId/unassigned-positions')
+  @ApiQuery({ name: 'search', required: false })
+  @ApiQuery({ name: 'offset', required: false })
+  @ApiQuery({ name: 'limit', required: false })
+  async getUnassignedRulePositions(
+    @Param('zoneId', ParseIntPipe) zoneId: number,
+    @Param('ruleId', ParseIntPipe) ruleId: number,
+    @Req() req: RequestWithUser,
+    @Query('search') search?: string,
+    @Query(
+      'offset',
+      new DefaultValuePipe(PAGINATION_CONSTANTS.DEFAULT_OFFSET),
+      ParseIntPipe,
+    )
+    offset?: number,
+    @Query(
+      'limit',
+      new DefaultValuePipe(PAGINATION_CONSTANTS.DEFAULT_LIMIT),
+      ParseIntPipe,
+    )
+    limit?: number,
+  ) {
+    return this.accessControlService.getRulePositions(
+      req.user.sub,
+      zoneId,
+      ruleId,
+      false,
+      search,
+      offset,
+      limit,
     );
   }
 

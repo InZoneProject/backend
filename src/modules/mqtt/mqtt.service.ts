@@ -64,13 +64,23 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
         if (!organization?.organization_admin) return;
 
         const adminId = organization.organization_admin.organization_admin_id;
-        const buildingIdToEmit = result.buildingId ?? result.previousBuildingId;
+        const buildingIdsToEmit = [
+          result.buildingId,
+          result.previousBuildingId,
+        ].filter(
+          (buildingId, index, buildingIds): buildingId is number =>
+            typeof buildingId === 'number' &&
+            buildingId > 0 &&
+            buildingIds.indexOf(buildingId) === index,
+        );
 
-        if (buildingIdToEmit) {
-          this.locationsGateway.emitEmployeeLocationChange(
+        for (const buildingIdToEmit of buildingIdsToEmit) {
+          await this.locationsGateway.emitEmployeeLocationChange(
             buildingIdToEmit,
             result.employeeId,
+            result.doorId,
             result.newZoneId,
+            result.previousZoneId,
           );
         }
 

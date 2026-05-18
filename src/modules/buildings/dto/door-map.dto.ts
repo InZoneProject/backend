@@ -19,4 +19,7 @@ export class DoorMapDto {
 
   @ApiProperty()
   floor_id: number;
+
+  @ApiProperty({ nullable: true })
+  rfid_reader_id: number | null;
 }

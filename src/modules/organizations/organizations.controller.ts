@@ -414,10 +414,13 @@ export class OrganizationsController {
       limit,
     );
 
-    return response.map((member) => ({
-      ...member,
-      photo: mapPhotoToAbsoluteUrl(member.photo, req),
-    }));
+    return {
+      ...response,
+      items: response.items.map((member) => ({
+        ...member,
+        photo: mapPhotoToAbsoluteUrl(member.photo, req),
+      })),
+    };
   }
 
   @Get(':organizationId/members/:memberId/positions')

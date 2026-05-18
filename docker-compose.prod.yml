@@ -14,6 +14,18 @@ services:
     networks:
       - inzone_network
 
+  redis:
+    image: redis:7-alpine
+    container_name: inzone_redis_prod
+    restart: always
+    ports:
+      - ${REDIS_PORT}:${REDIS_PORT}
+    command: redis-server --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redis_data_prod:/data
+    networks:
+      - inzone_network
+
   emqx:
     image: emqx/emqx:5.5.0
     container_name: inzone_emqx_prod
@@ -60,8 +72,11 @@ services:
       - ${PORT}:${PORT}
     env_file:
       - .env.prod
+    environment:
+      NODE_OPTIONS: --max-old-space-size=4096
     depends_on:
       - postgres
+      - redis
       - emqx
     volumes:
       - /app/node_modules
@@ -70,6 +85,7 @@ services:
 
 volumes:
   pgdata_prod:
+  redis_data_prod:
   emqx_data_prod:
   emqx_log_prod:
 

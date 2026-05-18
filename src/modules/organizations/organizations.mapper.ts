@@ -42,6 +42,7 @@ export class OrganizationsMapper {
     return {
       floor_id: floor.floor_id,
       floor_number: floor.floor_number,
+      floor_name: floor.floor_name,
     };
   }
 

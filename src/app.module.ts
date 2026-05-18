@@ -14,6 +14,7 @@ import { TagAdminModule } from './modules/tag-admin/tag-admin.module';
 import { SharedModule } from './shared/shared.module';
 import { MqttModule } from './modules/mqtt/mqtt.module';
 import { RealtimeModule } from './modules/realtime/realtime.module';
+import { RedisModule } from './modules/redis/redis.module';
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { RealtimeModule } from './modules/realtime/realtime.module';
     }),
 
     SharedModule,
+    RedisModule,
     AuthModule,
     OrganizationsModule,
     EmployeesModule,

@@ -17,7 +17,10 @@ export class Door {
   @PrimaryGeneratedColumn()
   door_id: number;
 
-  @Column({ default: false })
+  @Column({
+    type: 'boolean',
+    default: false,
+  })
   is_entrance: boolean;
 
   @Column({

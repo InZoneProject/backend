@@ -14,7 +14,10 @@ export class Position {
   @PrimaryGeneratedColumn()
   position_id: number;
 
-  @Column({ length: COLUMN_LENGTHS.ROLE })
+  @Column({
+    type: 'varchar',
+    length: COLUMN_LENGTHS.ROLE,
+  })
   role: string;
 
   @Column({

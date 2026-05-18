@@ -10,6 +10,9 @@ import {
   HttpCode,
   HttpStatus,
   Patch,
+  Get,
+  Query,
+  DefaultValuePipe,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { RfidService } from './rfid.service';
@@ -22,6 +25,8 @@ import type { RequestWithUser } from '../auth/types/request-with-user.types';
 import { CreateRfidTagDto } from './dto/create-rfid-tag.dto';
 import { CreateRfidReaderDto } from './dto/create-rfid-reader.dto';
 import { UpdateRfidTagDto } from './dto/update-rfid-tag.dto';
+import { UpdateRfidReaderDto } from './dto/update-rfid-reader.dto';
+import { PAGINATION_CONSTANTS } from '../../shared/constants/pagination.constants';
 
 @ApiTags('RFID')
 @Controller('rfid')
@@ -41,6 +46,28 @@ export class RfidController {
         req.user.sub,
         createRfidReaderDto,
       );
+    return {
+      rfid_reader_id: rfid_reader.rfid_reader_id,
+      name: rfid_reader.name,
+      secret_token: plain_token,
+      created_at: rfid_reader.created_at,
+    };
+  }
+
+  @Post('doors/:doorId/readers')
+  @Roles(UserRole.ORGANIZATION_ADMIN)
+  async createRfidReaderForDoor(
+    @Param('doorId', ParseIntPipe) doorId: number,
+    @Body() createRfidReaderDto: UpdateRfidReaderDto,
+    @Req() req: RequestWithUser,
+  ) {
+    const { rfid_reader, plain_token } =
+      await this.rfidService.createRfidReaderForDoor(
+        req.user.sub,
+        doorId,
+        createRfidReaderDto.name,
+      );
+
     return {
       rfid_reader_id: rfid_reader.rfid_reader_id,
       name: rfid_reader.name,
@@ -89,6 +116,57 @@ export class RfidController {
       req.user.sub,
       tagId,
       updateRfidTagDto,
+    );
+  }
+
+  @Patch('readers/:id')
+  @Roles(UserRole.ORGANIZATION_ADMIN)
+  async updateRfidReader(
+    @Param('id', ParseIntPipe) readerId: number,
+    @Body() updateRfidReaderDto: UpdateRfidReaderDto,
+    @Req() req: RequestWithUser,
+  ) {
+    return this.rfidService.updateRfidReader(
+      req.user.sub,
+      readerId,
+      updateRfidReaderDto,
+    );
+  }
+
+  @Get('doors/:doorId/reader')
+  @Roles(UserRole.ORGANIZATION_ADMIN)
+  async getDoorReader(
+    @Param('doorId', ParseIntPipe) doorId: number,
+    @Req() req: RequestWithUser,
+  ) {
+    return this.rfidService.getDoorReader(req.user.sub, doorId);
+  }
+
+  @Get('doors/:doorId/available-readers')
+  @Roles(UserRole.ORGANIZATION_ADMIN)
+  async getAvailableReadersForDoor(
+    @Param('doorId', ParseIntPipe) doorId: number,
+    @Req() req: RequestWithUser,
+    @Query(
+      'offset',
+      new DefaultValuePipe(PAGINATION_CONSTANTS.DEFAULT_OFFSET),
+      ParseIntPipe,
+    )
+    offset: number,
+    @Query(
+      'limit',
+      new DefaultValuePipe(PAGINATION_CONSTANTS.DEFAULT_LIMIT),
+      ParseIntPipe,
+    )
+    limit: number,
+    @Query('search') search?: string,
+  ) {
+    return this.rfidService.getAvailableReadersForDoor(
+      req.user.sub,
+      doorId,
+      offset,
+      limit,
+      search,
     );
   }
 

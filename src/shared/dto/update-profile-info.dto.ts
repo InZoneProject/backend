@@ -13,5 +13,5 @@ export class UpdateProfileInfoDto {
   @IsString()
   @IsOptional()
   @MaxLength(COLUMN_LENGTHS.PHONE)
-  phone_number?: string;
+  phone: string | null;
 }

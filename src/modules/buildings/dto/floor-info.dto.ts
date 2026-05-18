@@ -6,4 +6,10 @@ export class FloorInfoDto {
 
   @ApiProperty()
   floor_number: number;
+
+  @ApiProperty()
+  floor_name: string;
+
+  @ApiProperty()
+  can_delete: boolean;
 }

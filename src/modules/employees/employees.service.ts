@@ -127,14 +127,14 @@ export class EmployeesService {
     }
 
     employee.full_name = updateInfoDto.name;
-    if (updateInfoDto.phone_number !== undefined) {
-      employee.phone = updateInfoDto.phone_number;
+    if (updateInfoDto.phone !== undefined) {
+      employee.phone = updateInfoDto.phone;
     }
     await this.employeeRepository.save(employee);
 
     return {
       name: employee.full_name,
-      phone_number: employee.phone,
+      phone: employee.phone,
     };
   }
 

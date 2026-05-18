@@ -15,7 +15,10 @@ export class ZoneAccessRule {
   @PrimaryGeneratedColumn()
   zone_access_rule_id: number;
 
-  @Column({ length: COLUMN_LENGTHS.TITLE })
+  @Column({
+    type: 'varchar',
+    length: COLUMN_LENGTHS.TITLE,
+  })
   title: string;
 
   @Column({ type: 'enum', enum: AccessType })

@@ -17,8 +17,14 @@ export class Floor {
   @PrimaryGeneratedColumn()
   floor_id: number;
 
-  @Column({ default: DEFAULT_VALUES.FLOOR_NUMBER })
+  @Column({
+    type: 'int',
+    default: DEFAULT_VALUES.FLOOR_NUMBER,
+  })
   floor_number: number;
+
+  @Column({ type: 'varchar', length: 100 })
+  floor_name: string;
 
   @CreateDateColumn()
   created_at: Date;

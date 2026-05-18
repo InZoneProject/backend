@@ -1,0 +1,5 @@
+export const REDIS_CONSTANTS = {
+  MISSING_CONFIGURATION:
+    'Redis configuration is missing. Set REDIS_URL or REDIS_HOST, REDIS_PORT, REDIS_PASSWORD and REDIS_KEY_PREFIX.',
+  CONNECT_TIMEOUT_MS: 1000,
+};

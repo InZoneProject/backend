@@ -15,16 +15,28 @@ export class Notification {
   @PrimaryGeneratedColumn()
   notification_id: number;
 
-  @Column({ length: COLUMN_LENGTHS.TITLE })
+  @Column({
+    type: 'varchar',
+    length: COLUMN_LENGTHS.TITLE,
+  })
   title: string;
 
-  @Column({ length: COLUMN_LENGTHS.MESSAGE })
+  @Column({
+    type: 'varchar',
+    length: COLUMN_LENGTHS.MESSAGE,
+  })
   message: string;
 
-  @Column({ default: false })
+  @Column({
+    type: 'boolean',
+    default: false,
+  })
   is_read_by_employee: boolean;
 
-  @Column({ default: false })
+  @Column({
+    type: 'boolean',
+    default: false,
+  })
   is_read_by_org_admin: boolean;
 
   @CreateDateColumn()

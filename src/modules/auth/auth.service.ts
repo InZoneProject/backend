@@ -584,13 +584,21 @@ export class AuthService implements OnModuleInit {
   ): Promise<void> {
     switch (role) {
       case UserRole.ORGANIZATION_ADMIN:
-        await this.organizationAdminRepository.save(user);
+        if ('organization_admin_id' in user) {
+          await this.organizationAdminRepository.save(user);
+        }
         break;
+
       case UserRole.TAG_ADMIN:
-        await this.tagAdminRepository.save(user);
+        if ('tag_admin_id' in user) {
+          await this.tagAdminRepository.save(user);
+        }
         break;
+
       case UserRole.EMPLOYEE:
-        await this.employeeRepository.save(user);
+        if ('employee_id' in user) {
+          await this.employeeRepository.save(user);
+        }
         break;
     }
   }

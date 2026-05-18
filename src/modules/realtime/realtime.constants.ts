@@ -7,6 +7,8 @@ export const REALTIME_CONSTANTS = {
     NOTIFICATION_RECEIVED: 'notification.received',
     SUBSCRIBE_BUILDING: 'subscribe_building',
     UNSUBSCRIBE_BUILDING: 'unsubscribe_building',
+    SUBSCRIBE_FLOOR: 'subscribe_floor',
+    UNSUBSCRIBE_FLOOR: 'unsubscribe_floor',
     EMPLOYEE_LOCATION: 'employee.location',
   },
   MESSAGES: {
@@ -20,11 +22,17 @@ export const REALTIME_CONSTANTS = {
     SUBSCRIBED_NOTIFICATIONS: 'Subscribed to notifications',
     UNSUBSCRIBED_NOTIFICATIONS: 'Unsubscribed from notifications',
     BUILDING_ID_REQUIRED: 'building_id is required',
+    FLOOR_ID_REQUIRED: 'floor_id is required',
     BUILDING_NOT_FOUND: 'Building not found',
+    FLOOR_NOT_FOUND: 'Floor not found',
     ALREADY_SUBSCRIBED_BUILDING: 'Already subscribed to this building',
     NOT_SUBSCRIBED_BUILDING: 'Not subscribed to this building',
+    ALREADY_SUBSCRIBED_FLOOR: 'Already subscribed to this floor',
+    NOT_SUBSCRIBED_FLOOR: 'Not subscribed to this floor',
     SUBSCRIBED_TO_BUILDING: (id: number) => `Subscribed to building ${id}`,
     UNSUBSCRIBED_FROM_BUILDING: (id: number) =>
       `Unsubscribed from building ${id}`,
+    SUBSCRIBED_TO_FLOOR: (id: number) => `Subscribed to floor ${id}`,
+    UNSUBSCRIBED_FROM_FLOOR: (id: number) => `Unsubscribed from floor ${id}`,
   },
 } as const;

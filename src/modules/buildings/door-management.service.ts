@@ -140,7 +140,10 @@ export class DoorManagementService {
       where.floor = { floor_id: floorId };
     }
 
-    return this.doorRepository.find({ where } as never);
+    return this.doorRepository.find({
+      where,
+      relations: ['floor'],
+    } as never);
   }
 
   async validateEntranceDoorSpace(
@@ -149,15 +152,37 @@ export class DoorManagementService {
   ): Promise<void> {
     for (const zone of existingZones) {
       const entranceDoors = await this.findEntranceDoors(zone.zone_id);
+      const checkedDoorGroups = new Set<string>();
 
       for (const door of entranceDoors) {
         if (door.entrance_door_side) {
+          const floorId = door.floor?.floor_id;
+          const doorGroupKey = `${floorId ?? 'unknown'}:${door.entrance_door_side}`;
+
+          if (checkedDoorGroups.has(doorGroupKey)) continue;
+          checkedDoorGroups.add(doorGroupKey);
+
+          const zonesOnDoorFloor =
+            floorId !== undefined
+              ? existingZones.filter(
+                  (existingZone) =>
+                    existingZone.is_transition_between_floors ||
+                    existingZone.floor?.floor_id === floorId,
+                )
+              : existingZones;
+          const entranceDoorsOnDoorFloor =
+            floorId !== undefined
+              ? entranceDoors.filter(
+                  (entranceDoor) => entranceDoor.floor?.floor_id === floorId,
+                )
+              : entranceDoors;
+
           this.zoneGeometryValidator.validateEntranceDoorSpace(
             zone,
             newZoneRect,
             door.entrance_door_side,
-            existingZones,
-            entranceDoors,
+            zonesOnDoorFloor,
+            entranceDoorsOnDoorFloor,
           );
         }
       }

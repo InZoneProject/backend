@@ -17,28 +17,34 @@ export class OrganizationMembersService {
     offset: number,
     limit: number,
   ) {
-    const { paginatedResults, positions } = await this.buildMembersBase(
+    const { paginatedResults, positions, total } = await this.buildMembersBase(
       queryBuilders,
       offset,
       limit,
     );
 
-    return paginatedResults.map((result: OrganizationMemberRawDto) => ({
-      id: result.id,
-      full_name: result.full_name,
-      email: result.email,
-      photo: result.photo,
-      role: result.role,
-      ...(result.role === OrganizationMemberRole.EMPLOYEE && {
-        positions:
-          result.position_ids && result.position_ids[0] !== null
-            ? positions.filter((p) =>
-                result.position_ids?.includes(p.position_id),
-              )
-            : [],
-      }),
-      created_at: result.created_at,
-    }));
+    return {
+      items: paginatedResults.map((result: OrganizationMemberRawDto) => ({
+        id: result.id,
+        full_name: result.full_name,
+        email: result.email,
+        phone: result.phone,
+        photo: result.photo,
+        role: result.role,
+        ...(result.role === OrganizationMemberRole.EMPLOYEE && {
+          positions:
+            result.position_ids && result.position_ids[0] !== null
+              ? positions.filter((p) =>
+                  result.position_ids?.includes(p.position_id),
+                )
+              : [],
+        }),
+        created_at: result.created_at,
+      })),
+      total,
+      offset,
+      limit,
+    };
   }
 
   async buildMembersResponseWithExtras<TExtra extends object>(
@@ -52,6 +58,7 @@ export class OrganizationMembersService {
         id: number;
         full_name: string;
         email: string;
+        phone: string | null;
         photo: string | null;
         role: OrganizationMemberRole;
         created_at: Date;
@@ -72,6 +79,7 @@ export class OrganizationMembersService {
       id: result.id,
       full_name: result.full_name,
       email: result.email,
+      phone: result.phone,
       photo: result.photo,
       role: result.role,
       ...(result.role === OrganizationMemberRole.EMPLOYEE && {
@@ -91,7 +99,7 @@ export class OrganizationMembersService {
     queryBuilders: Array<SelectQueryBuilder<ObjectLiteral>>,
     offset: number,
     limit: number,
-  ): Promise<{ paginatedResults: T[]; positions: Position[] }> {
+  ): Promise<{ paginatedResults: T[]; positions: Position[]; total: number }> {
     const resultsPromises: Array<Promise<T[]>> = queryBuilders.map((query) =>
       query.getRawMany<T>(),
     );
@@ -109,6 +117,7 @@ export class OrganizationMembersService {
     });
 
     const paginatedResults = allResults.slice(offset, offset + limit);
+    const total = allResults.length;
 
     const positionIds = paginatedResults
       .flatMap((r) => r.position_ids || [])
@@ -122,6 +131,6 @@ export class OrganizationMembersService {
           })
         : [];
 
-    return { paginatedResults, positions };
+    return { paginatedResults, positions, total };
   }
 }

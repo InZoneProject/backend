@@ -81,14 +81,14 @@ export class TagAdminService {
     }
 
     tagAdmin.full_name = updateInfoDto.name;
-    if (updateInfoDto.phone_number !== undefined) {
-      tagAdmin.phone = updateInfoDto.phone_number;
+    if (updateInfoDto.phone !== undefined) {
+      tagAdmin.phone = updateInfoDto.phone;
     }
     await this.tagAdminRepository.save(tagAdmin);
 
     return {
       name: tagAdmin.full_name,
-      phone_number: tagAdmin.phone,
+      phone: tagAdmin.phone,
     };
   }
 

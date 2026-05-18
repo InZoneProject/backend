@@ -5,11 +5,14 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { LocationsGateway } from './locations.gateway';
 import { NotificationsGateway } from './notifications.gateway';
 import { Building } from '../buildings/entities/building.entity';
+import { Floor } from '../buildings/entities/floor.entity';
+import { Zone } from '../buildings/entities/zone.entity';
+import { Employee } from '../employees/entities/employee.entity';
 import { Organization } from '../organizations/entities/organization.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Building, Organization]),
+    TypeOrmModule.forFeature([Building, Floor, Zone, Employee, Organization]),
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (config: ConfigService) => ({

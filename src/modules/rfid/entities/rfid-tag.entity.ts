@@ -17,10 +17,16 @@ export class RfidTag {
   @PrimaryGeneratedColumn()
   rfid_tag_id: number;
 
-  @Column({ unique: true })
+  @Column({
+    type: 'int',
+    unique: true,
+  })
   tag_uid: number;
 
-  @Column({ length: COLUMN_LENGTHS.TITLE })
+  @Column({
+    type: 'varchar',
+    length: COLUMN_LENGTHS.TITLE,
+  })
   name: string;
 
   @CreateDateColumn()

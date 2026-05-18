@@ -14,12 +14,15 @@ import { AccessType } from '../../shared/enums/access-type.enum';
 import { Notification } from '../notifications/entities/notification.entity';
 import { NOTIFICATION_CONSTANTS } from '../notifications/notifications.constants';
 import { determineNewZoneById } from '../../shared/utils/zone-navigation.util';
+import { ScanStateCacheService } from './services/scan-state-cache.service';
 
 interface ScanResult {
   employeeId: number;
+  doorId: number;
+  previousZoneId: number | null;
   newZoneId: number | null;
   buildingId: number | null;
-  previousBuildingId?: number;
+  previousBuildingId: number | null;
   organizationId: number;
   notification?: Notification;
 }
@@ -42,6 +45,7 @@ export class ScanProcessingService {
     @InjectRepository(Employee)
     private readonly employeeRepository: Repository<Employee>,
     private readonly notificationsService: NotificationsService,
+    private readonly scanStateCacheService: ScanStateCacheService,
   ) {}
 
   async processScan(
@@ -89,7 +93,7 @@ export class ScanProcessingService {
       return null;
     }
 
-    const currentEmployeeZoneId = await this.getCurrentEmployeeZoneId(
+    const currentEmployeeZoneId = await this.resolveCurrentEmployeeZoneId(
       employee.employee_id,
     );
 
@@ -108,7 +112,17 @@ export class ScanProcessingService {
       door.zone_to.zone_id,
     );
 
-    await this.createScanEvent(reader, tag);
+    const scanEvent = await this.createScanEvent(reader, tag);
+    await this.scanStateCacheService.setRecentScan({
+      scan_event_id: scanEvent.scan_event_id,
+      reader_id: reader.rfid_reader_id,
+      tag_id: tag.rfid_tag_id,
+      created_at: scanEvent.created_at.toISOString(),
+    });
+    await this.scanStateCacheService.setCurrentZoneId(
+      employee.employee_id,
+      newZoneId,
+    );
 
     let notification: Notification | undefined;
 
@@ -125,9 +139,11 @@ export class ScanProcessingService {
 
     return {
       employeeId: employee.employee_id,
+      doorId: door.door_id,
+      previousZoneId: currentEmployeeZoneId,
       newZoneId,
       buildingId: newZone?.building?.building_id ?? null,
-      previousBuildingId: newZone === null ? previousBuildingId : undefined,
+      previousBuildingId: previousBuildingId ?? null,
       organizationId,
       notification,
     };
@@ -143,6 +159,23 @@ export class ScanProcessingService {
       relations: ['employee'],
       order: { tag_assignment_change_date_and_time: 'DESC' },
     });
+  }
+
+  private async resolveCurrentEmployeeZoneId(
+    employeeId: number,
+  ): Promise<number | null> {
+    const cachedZoneId =
+      await this.scanStateCacheService.getCurrentZoneId(employeeId);
+
+    if (cachedZoneId !== undefined) return cachedZoneId;
+
+    const currentZoneId = await this.getCurrentEmployeeZoneId(employeeId);
+    await this.scanStateCacheService.setCurrentZoneId(
+      employeeId,
+      currentZoneId,
+    );
+
+    return currentZoneId;
   }
 
   private async getCurrentEmployeeZoneId(

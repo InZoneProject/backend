@@ -15,10 +15,14 @@ export class PasswordReset {
   @PrimaryGeneratedColumn()
   password_reset_id: number;
 
-  @Column()
+  @Column({
+    type: 'varchar',
+  })
   token_hashed: string;
 
-  @Column()
+  @Column({
+    type: 'timestamp',
+  })
   expires_at: Date;
 
   @CreateDateColumn()

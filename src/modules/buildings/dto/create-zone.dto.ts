@@ -62,4 +62,11 @@ export class CreateZoneDto {
   @IsInt()
   @IsOptional()
   floor_id?: number;
+
+  @ApiProperty({ required: false })
+  @Type(() => Number)
+  @IsNumber()
+  @IsInt()
+  @IsOptional()
+  zone_from_id?: number;
 }

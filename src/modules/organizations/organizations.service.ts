@@ -118,6 +118,7 @@ export class OrganizationsService {
 
       const floor = manager.create(Floor, {
         building,
+        floor_name: 'Новий поверх',
       });
       await manager.save(floor);
 
@@ -477,14 +478,16 @@ export class OrganizationsService {
     }
 
     organizationAdmin.full_name = updateInfoDto.name;
-    if (updateInfoDto.phone_number !== undefined) {
-      organizationAdmin.phone = updateInfoDto.phone_number;
+
+    if (updateInfoDto.phone !== undefined) {
+      organizationAdmin.phone = updateInfoDto.phone;
     }
+
     await this.organizationAdminRepository.save(organizationAdmin);
 
     return {
       name: organizationAdmin.full_name,
-      phone_number: organizationAdmin.phone,
+      phone: organizationAdmin.phone,
     };
   }
 
@@ -546,9 +549,7 @@ export class OrganizationsService {
     const positionsQuery = this.positionRepository
       .createQueryBuilder('position')
       .where('position.organization_id = :organizationId', { organizationId })
-      .orderBy('position.created_at', 'DESC')
-      .offset(offset)
-      .limit(limit);
+      .orderBy('position.created_at', 'DESC');
 
     if (search) {
       positionsQuery.andWhere('position.role ILIKE :search', {
@@ -587,7 +588,12 @@ export class OrganizationsService {
       });
     }
 
-    return positionsQuery.getMany();
+    const [items, total] = await positionsQuery
+      .offset(offset)
+      .limit(limit)
+      .getManyAndCount();
+
+    return { items, total, offset, limit };
   }
 
   async getRfidTagsList(
@@ -734,6 +740,7 @@ export class OrganizationsService {
       .select('org_admin.organization_admin_id', 'id')
       .addSelect('org_admin.full_name', 'full_name')
       .addSelect('org_admin.email', 'email')
+      .addSelect('org_admin.phone', 'phone')
       .addSelect('org_admin.photo', 'photo')
       .addSelect(`'${OrganizationMemberRole.ORGANIZATION_ADMIN}'`, 'role')
       .addSelect('org_admin.created_at', 'created_at')
@@ -752,6 +759,7 @@ export class OrganizationsService {
       .select('tag_admin.tag_admin_id', 'id')
       .addSelect('tag_admin.full_name', 'full_name')
       .addSelect('tag_admin.email', 'email')
+      .addSelect('tag_admin.phone', 'phone')
       .addSelect('tag_admin.photo', 'photo')
       .addSelect(`'${OrganizationMemberRole.TAG_ADMIN}'`, 'role')
       .addSelect('tag_admin.created_at', 'created_at')
@@ -770,6 +778,7 @@ export class OrganizationsService {
       .select('employee.employee_id', 'id')
       .addSelect('employee.full_name', 'full_name')
       .addSelect('employee.email', 'email')
+      .addSelect('employee.phone', 'phone')
       .addSelect('employee.photo', 'photo')
       .addSelect(`'${OrganizationMemberRole.EMPLOYEE}'`, 'role')
       .addSelect('employee.created_at', 'created_at')
@@ -778,13 +787,14 @@ export class OrganizationsService {
       .groupBy('employee.employee_id')
       .addGroupBy('employee.full_name')
       .addGroupBy('employee.email')
+      .addGroupBy('employee.phone')
       .addGroupBy('employee.photo')
       .addGroupBy('employee.created_at');
 
     return this.organizationMembersService.buildMembersResponse(
       [orgAdmins, tagAdmins, employees],
-      offset,
-      limit,
+      Math.max(0, offset),
+      Math.max(1, limit),
     );
   }
 
@@ -866,11 +876,13 @@ export class OrganizationsService {
     limit: number,
     search?: string,
     searchField?: keyof T,
-  ): Promise<T[]> {
+  ): Promise<{ items: T[]; total: number; offset: number; limit: number }> {
     await this.organizationOwnershipValidator.validateOwnership(
       organizationAdminId,
       organizationId,
     );
+    const normalizedOffset = Math.max(0, offset);
+    const normalizedLimit = Math.max(1, limit);
 
     const whereClause: Record<string, unknown> = {
       organization: { organization_id: organizationId },
@@ -880,12 +892,34 @@ export class OrganizationsService {
       whereClause[String(searchField)] = ILike(`%${search}%`);
     }
 
-    return repository.find({
+    const [items, total] = await repository.findAndCount({
       where: whereClause as never,
       select: select as never,
-      skip: offset,
-      take: limit,
+      order: this.getStableListOrder(repository),
+      skip: normalizedOffset,
+      take: normalizedLimit,
     });
+
+    return { items, total, offset: normalizedOffset, limit: normalizedLimit };
+  }
+
+  private getStableListOrder<T extends ObjectLiteral>(
+    repository: Repository<T>,
+  ) {
+    const order: Record<string, 'ASC' | 'DESC'> = {};
+    const hasCreatedAt = repository.metadata.columns.some(
+      (column) => column.propertyName === 'created_at',
+    );
+
+    if (hasCreatedAt) {
+      order.created_at = 'DESC';
+    }
+
+    for (const primaryColumn of repository.metadata.primaryColumns) {
+      order[primaryColumn.propertyName] = 'ASC';
+    }
+
+    return order as never;
   }
 
   private async validateOrganizationMembership(
@@ -1067,9 +1101,7 @@ export class OrganizationsService {
       .andWhere('position.organization_id = :organizationId', {
         organizationId,
       })
-      .orderBy('position.created_at', 'DESC')
-      .offset(offset)
-      .limit(limit);
+      .orderBy('position.created_at', 'DESC');
 
     if (search) {
       positionsQuery.andWhere('position.role ILIKE :search', {
@@ -1077,7 +1109,12 @@ export class OrganizationsService {
       });
     }
 
-    return positionsQuery.getMany();
+    const [items, total] = await positionsQuery
+      .offset(offset)
+      .limit(limit)
+      .getManyAndCount();
+
+    return { items, total, offset, limit };
   }
 
   async removeTagAdmin(

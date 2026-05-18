@@ -16,10 +16,16 @@ export class RfidReader {
   @PrimaryGeneratedColumn()
   rfid_reader_id: number;
 
-  @Column({ length: COLUMN_LENGTHS.SECRET_TOKEN })
+  @Column({
+    type: 'varchar',
+    length: COLUMN_LENGTHS.SECRET_TOKEN,
+  })
   secret_token: string;
 
-  @Column({ length: COLUMN_LENGTHS.TITLE })
+  @Column({
+    type: 'varchar',
+    length: COLUMN_LENGTHS.TITLE,
+  })
   name: string;
 
   @CreateDateColumn()

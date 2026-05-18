@@ -10,10 +10,9 @@ export class FileValidator {
       );
     }
 
-    const isValidType =
-      file.mimetype === FILE_VALIDATION_CONSTANTS.ALLOWED_IMAGE_TYPE_JPEG ||
-      file.mimetype === FILE_VALIDATION_CONSTANTS.ALLOWED_IMAGE_TYPE_PNG ||
-      file.mimetype === FILE_VALIDATION_CONSTANTS.ALLOWED_IMAGE_TYPE_JPG;
+    const isValidType = (
+      FILE_VALIDATION_CONSTANTS.ALLOWED_IMAGE_MIME_TYPES as readonly string[]
+    ).includes(file.mimetype);
 
     if (!isValidType) {
       throw new BadRequestException(

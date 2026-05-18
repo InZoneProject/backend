@@ -6,6 +6,7 @@ import {
   Req,
   Param,
   ParseIntPipe,
+  ParseFloatPipe,
   Patch,
   Delete,
   UseInterceptors,
@@ -14,6 +15,7 @@ import {
   HttpCode,
   HttpStatus,
   Query,
+  DefaultValuePipe,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -33,6 +35,7 @@ import { CreateDoorDto } from './dto/create-door.dto';
 import { UpdateZoneTitleDto } from './dto/update-zone-title.dto';
 import { ReorderFloorDto } from './dto/reorder-floor.dto';
 import { UpdateBuildingDto } from './dto/update-building.dto';
+import { UpdateFloorNameDto } from './dto/update-floor-name.dto';
 import { AssignReaderToDoorDto } from './dto/assign-reader-to-door.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -44,6 +47,8 @@ import { BuildingsMapper } from './buildings.mapper';
 import { UpdateZonePhotoDto } from './dto/update-zone-photo.dto';
 import { UpdateZoneGeometryDto } from './dto/update-zone-geometry.dto';
 import { ShiftBuildingZonesDto } from './dto/shift-building-zones.dto';
+import { PAGINATION_CONSTANTS } from '../../shared/constants/pagination.constants';
+import { mapPhotoToAbsoluteUrl } from '../../shared/utils/photo-url.util';
 
 @ApiTags('Buildings')
 @Controller('buildings')
@@ -84,6 +89,34 @@ export class BuildingsController {
     return BuildingsMapper.toBuildingInfoResponse(building);
   }
 
+  @Get(':id/floors')
+  @ApiQuery({ name: 'search', required: false })
+  async getBuildingFloors(
+    @Param('id', ParseIntPipe) buildingId: number,
+    @Req() req: RequestWithUser,
+    @Query(
+      'offset',
+      new DefaultValuePipe(PAGINATION_CONSTANTS.DEFAULT_OFFSET),
+      ParseIntPipe,
+    )
+    offset: number,
+    @Query(
+      'limit',
+      new DefaultValuePipe(PAGINATION_CONSTANTS.DEFAULT_LIMIT),
+      ParseIntPipe,
+    )
+    limit: number,
+    @Query('search') search?: string,
+  ) {
+    return this.buildingsService.getBuildingFloors(
+      req.user.sub,
+      buildingId,
+      offset,
+      limit,
+      search,
+    );
+  }
+
   @Patch(':id')
   async updateBuilding(
     @Param('id', ParseIntPipe) buildingId: number,
@@ -103,13 +136,109 @@ export class BuildingsController {
     @Param('id', ParseIntPipe) buildingId: number,
     @Param('floorId', ParseIntPipe) floorId: number,
     @Req() req: RequestWithUser,
+    @Query('x', ParseFloatPipe) x: number,
+    @Query('y', ParseFloatPipe) y: number,
+    @Query('width', ParseFloatPipe) width: number,
+    @Query('height', ParseFloatPipe) height: number,
+    @Query('cursor') cursor?: string,
+    @Query('limit') limit?: string,
   ) {
-    const { zones, doors } = await this.buildingsService.getBuildingMap(
+    const {
+      zones,
+      doors,
+      transitionValidationZones,
+      transitionValidationDoors,
+      deletableZoneIds,
+      deletableDoorIds,
+      mapMeta,
+      zoneClusters,
+    } = await this.buildingsService.getBuildingMap(
+      req.user.sub,
+      buildingId,
+      floorId,
+      {
+        viewport: { x, y, width, height },
+        cursor: cursor ? Number(cursor) : undefined,
+        limit: limit ? Number(limit) : undefined,
+      },
+    );
+    return BuildingsMapper.toFloorMapResponse(
+      zones,
+      doors,
+      transitionValidationZones,
+      transitionValidationDoors,
+      deletableZoneIds,
+      deletableDoorIds,
+      mapMeta,
+      zoneClusters,
+    );
+  }
+
+  @Get(':id/floors/:floorId/map-seed')
+  async getBuildingMapSeed(
+    @Param('id', ParseIntPipe) buildingId: number,
+    @Param('floorId', ParseIntPipe) floorId: number,
+    @Req() req: RequestWithUser,
+  ) {
+    return this.buildingsService.getBuildingMapSeed(
       req.user.sub,
       buildingId,
       floorId,
     );
-    return BuildingsMapper.toFloorMapResponse(zones, doors);
+  }
+
+  @Get('floors/:floorId/map')
+  async getFloorMap(
+    @Param('floorId', ParseIntPipe) floorId: number,
+    @Req() req: RequestWithUser,
+    @Query('x', ParseFloatPipe) x: number,
+    @Query('y', ParseFloatPipe) y: number,
+    @Query('width', ParseFloatPipe) width: number,
+    @Query('height', ParseFloatPipe) height: number,
+    @Query('cursor') cursor?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const {
+      zones,
+      doors,
+      transitionValidationZones,
+      transitionValidationDoors,
+      deletableZoneIds,
+      deletableDoorIds,
+      mapMeta,
+      zoneClusters,
+    } = await this.buildingsService.getBuildingMap(
+      req.user.sub,
+      null,
+      floorId,
+      {
+        viewport: { x, y, width, height },
+        cursor: cursor ? Number(cursor) : undefined,
+        limit: limit ? Number(limit) : undefined,
+      },
+    );
+    return BuildingsMapper.toFloorMapResponse(
+      zones,
+      doors,
+      transitionValidationZones,
+      transitionValidationDoors,
+      deletableZoneIds,
+      deletableDoorIds,
+      mapMeta,
+      zoneClusters,
+    );
+  }
+
+  @Get('floors/:floorId/map-seed')
+  async getFloorMapSeed(
+    @Param('floorId', ParseIntPipe) floorId: number,
+    @Req() req: RequestWithUser,
+  ) {
+    return this.buildingsService.getBuildingMapSeed(
+      req.user.sub,
+      null,
+      floorId,
+    );
   }
 
   @Post(':id/floors')
@@ -207,12 +336,42 @@ export class BuildingsController {
     @Body() updateZoneGeometryDto: UpdateZoneGeometryDto,
     @Req() req: RequestWithUser,
   ) {
-    const { zones, doors } = await this.buildingsService.updateZoneGeometry(
+    await this.buildingsService.updateZoneGeometry(
       req.user.sub,
       zoneId,
       updateZoneGeometryDto,
     );
-    return BuildingsMapper.toFloorMapResponse(zones, doors);
+  }
+
+  @Get('zones/:id/geometry-dependencies')
+  async getZoneGeometryDependencies(
+    @Param('id', ParseIntPipe) zoneId: number,
+    @Req() req: RequestWithUser,
+    @Query('x') x?: string,
+    @Query('y') y?: string,
+    @Query('width') width?: string,
+    @Query('height') height?: string,
+  ) {
+    const viewport =
+      x !== undefined &&
+      y !== undefined &&
+      width !== undefined &&
+      height !== undefined
+        ? {
+            x: Number(x),
+            y: Number(y),
+            width: Number(width),
+            height: Number(height),
+          }
+        : undefined;
+    const { zones, doors } =
+      await this.buildingsService.getZoneGeometryDependencies(
+        req.user.sub,
+        zoneId,
+        viewport,
+      );
+
+    return BuildingsMapper.toZoneGeometryDependenciesResponse(zones, doors);
   }
 
   @Patch('zones/:id/shift')
@@ -221,13 +380,11 @@ export class BuildingsController {
     @Body() shiftBuildingZonesDto: ShiftBuildingZonesDto,
     @Req() req: RequestWithUser,
   ) {
-    const { zones, doors } = await this.buildingsService.shiftBuildingZones(
+    await this.buildingsService.shiftBuildingZones(
       req.user.sub,
       zoneId,
       shiftBuildingZonesDto,
     );
-
-    return BuildingsMapper.toFloorMapResponse(zones, doors);
   }
 
   @Patch('floors/:id/reorder')
@@ -240,6 +397,19 @@ export class BuildingsController {
       req.user.sub,
       floorId,
       reorderFloorDto.new_floor_number,
+    );
+  }
+
+  @Patch('floors/:id/name')
+  async updateFloorName(
+    @Param('id', ParseIntPipe) floorId: number,
+    @Body() updateFloorNameDto: UpdateFloorNameDto,
+    @Req() req: RequestWithUser,
+  ) {
+    return this.buildingsService.updateFloorName(
+      req.user.sub,
+      floorId,
+      updateFloorNameDto.floor_name,
     );
   }
 
@@ -313,12 +483,114 @@ export class BuildingsController {
     @Param('id', ParseIntPipe) buildingId: number,
     @Param('floorId', ParseIntPipe) floorId: number,
     @Req() req: RequestWithUser,
+    @Query('x', ParseFloatPipe) x: number,
+    @Query('y', ParseFloatPipe) y: number,
+    @Query('width', ParseFloatPipe) width: number,
+    @Query('height', ParseFloatPipe) height: number,
   ) {
-    return this.buildingsService.getCurrentEmployeeLocations(
+    return this.buildingsService
+      .getCurrentEmployeeLocations(req.user.sub, buildingId, floorId, {
+        x,
+        y,
+        width,
+        height,
+      })
+      .then((items) =>
+        items.map((item) => ({
+          ...item,
+          photo: mapPhotoToAbsoluteUrl(item.photo, req),
+        })),
+      );
+  }
+
+  @Get('floors/:floorId/employees/current-locations')
+  async getCurrentEmployeeLocationsByFloor(
+    @Param('floorId', ParseIntPipe) floorId: number,
+    @Req() req: RequestWithUser,
+    @Query('x', ParseFloatPipe) x: number,
+    @Query('y', ParseFloatPipe) y: number,
+    @Query('width', ParseFloatPipe) width: number,
+    @Query('height', ParseFloatPipe) height: number,
+  ) {
+    return this.buildingsService
+      .getCurrentEmployeeLocations(req.user.sub, null, floorId, {
+        x,
+        y,
+        width,
+        height,
+      })
+      .then((items) =>
+        items.map((item) => ({
+          ...item,
+          photo: mapPhotoToAbsoluteUrl(item.photo, req),
+        })),
+      );
+  }
+
+  @Get(':id/employees/current')
+  @ApiQuery({ name: 'search', required: false })
+  @ApiQuery({ name: 'offset', required: false })
+  @ApiQuery({ name: 'limit', required: false })
+  async getCurrentBuildingEmployees(
+    @Param('id', ParseIntPipe) buildingId: number,
+    @Req() req: RequestWithUser,
+    @Query('search') search?: string,
+    @Query('offset', new DefaultValuePipe(0), ParseIntPipe) offset?: number,
+    @Query(
+      'limit',
+      new DefaultValuePipe(PAGINATION_CONSTANTS.DEFAULT_LIMIT),
+      ParseIntPipe,
+    )
+    limit?: number,
+  ) {
+    const response = await this.buildingsService.getCurrentBuildingEmployees(
       req.user.sub,
       buildingId,
-      floorId,
+      search,
+      offset,
+      limit,
     );
+
+    return {
+      ...response,
+      items: response.items.map((item) => ({
+        ...item,
+        photo: mapPhotoToAbsoluteUrl(item.photo, req),
+      })),
+    };
+  }
+
+  @Get('floors/:floorId/employees/current')
+  @ApiQuery({ name: 'search', required: false })
+  @ApiQuery({ name: 'offset', required: false })
+  @ApiQuery({ name: 'limit', required: false })
+  async getCurrentFloorEmployees(
+    @Param('floorId', ParseIntPipe) floorId: number,
+    @Req() req: RequestWithUser,
+    @Query('search') search?: string,
+    @Query('offset', new DefaultValuePipe(0), ParseIntPipe) offset?: number,
+    @Query(
+      'limit',
+      new DefaultValuePipe(PAGINATION_CONSTANTS.DEFAULT_LIMIT),
+      ParseIntPipe,
+    )
+    limit?: number,
+  ) {
+    const response = await this.buildingsService.getCurrentFloorEmployees(
+      req.user.sub,
+      floorId,
+      search,
+      offset,
+      limit,
+    );
+
+    return {
+      ...response,
+      items: response.items.map((item) => ({
+        ...item,
+        photo: mapPhotoToAbsoluteUrl(item.photo, req),
+      })),
+    };
   }
 
   @Get(':buildingId/employees/:employeeId/daily-movements')

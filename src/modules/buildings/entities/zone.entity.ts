@@ -18,25 +18,48 @@ export class Zone {
   @PrimaryGeneratedColumn()
   zone_id: number;
 
-  @Column({ length: COLUMN_LENGTHS.TITLE, default: DEFAULT_VALUES.ZONE_TITLE })
+  @Column({
+    type: 'varchar',
+    length: COLUMN_LENGTHS.TITLE,
+    default: DEFAULT_VALUES.ZONE_TITLE,
+  })
   title: string;
 
-  @Column({ default: false })
+  @Column({
+    type: 'boolean',
+    default: false,
+  })
   is_transition_between_floors: boolean;
 
-  @Column({ default: DEFAULT_VALUES.ZONE_WIDTH })
+  @Column({
+    type: 'int',
+    default: DEFAULT_VALUES.ZONE_WIDTH,
+  })
   width: number;
 
-  @Column({ default: DEFAULT_VALUES.ZONE_HEIGHT })
+  @Column({
+    type: 'int',
+    default: DEFAULT_VALUES.ZONE_HEIGHT,
+  })
   height: number;
 
-  @Column({ type: 'varchar', length: COLUMN_LENGTHS.PHOTO, nullable: true })
+  @Column({
+    type: 'varchar',
+    length: COLUMN_LENGTHS.PHOTO,
+    nullable: true,
+  })
   photo: string | null;
 
-  @Column({ default: DEFAULT_VALUES.ZONE_X_COORDINATE })
+  @Column({
+    type: 'int',
+    default: DEFAULT_VALUES.ZONE_X_COORDINATE,
+  })
   x_coordinate: number;
 
-  @Column({ default: DEFAULT_VALUES.ZONE_Y_COORDINATE })
+  @Column({
+    type: 'int',
+    default: DEFAULT_VALUES.ZONE_Y_COORDINATE,
+  })
   y_coordinate: number;
 
   @CreateDateColumn()

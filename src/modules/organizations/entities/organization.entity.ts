@@ -23,11 +23,18 @@ export class Organization {
   @PrimaryGeneratedColumn()
   organization_id: number;
 
-  @Column({ length: COLUMN_LENGTHS.TITLE })
+  @Column({
+    type: 'varchar',
+    length: COLUMN_LENGTHS.TITLE,
+  })
   title: string;
 
-  @Column({ length: COLUMN_LENGTHS.DESCRIPTION, nullable: true })
-  description: string;
+  @Column({
+    type: 'varchar',
+    length: COLUMN_LENGTHS.DESCRIPTION,
+    nullable: true,
+  })
+  description: string | null;
 
   @CreateDateColumn()
   created_at: Date;

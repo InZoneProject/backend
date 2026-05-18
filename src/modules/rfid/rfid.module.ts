@@ -3,13 +3,14 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { RfidTag } from './entities/rfid-tag.entity';
 import { RfidReader } from './entities/rfid-reader.entity';
 import { ScanEvent } from './entities/scan-event.entity';
+import { Door } from '../buildings/entities/door.entity';
 import { RfidController } from './rfid.controller';
 import { RfidService } from './rfid.service';
 import { SharedModule } from '../../shared/shared.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([RfidTag, RfidReader, ScanEvent]),
+    TypeOrmModule.forFeature([RfidTag, RfidReader, ScanEvent, Door]),
     SharedModule,
   ],
   controllers: [RfidController],

@@ -5,6 +5,7 @@ import { MqttService } from './mqtt.service';
 import { MqttController } from './mqtt.controller';
 import { MqttAuthService } from './mqtt-auth.service';
 import { ScanProcessingService } from './scan-processing.service';
+import { ScanStateCacheService } from './services/scan-state-cache.service';
 import { RealtimeModule } from '../realtime/realtime.module';
 import { RfidReader } from '../rfid/entities/rfid-reader.entity';
 import { RfidTag } from '../rfid/entities/rfid-tag.entity';
@@ -38,6 +39,7 @@ import { TokenHashService } from '../../shared/services/token-hash.service';
     MqttService,
     MqttAuthService,
     ScanProcessingService,
+    ScanStateCacheService,
     TokenHashService,
   ],
   exports: [MqttService, ScanProcessingService],

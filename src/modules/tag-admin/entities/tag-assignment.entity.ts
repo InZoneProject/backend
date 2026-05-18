@@ -15,7 +15,9 @@ export class TagAssignment {
   @PrimaryGeneratedColumn()
   tag_assignment_id: number;
 
-  @Column()
+  @Column({
+    type: 'timestamp',
+  })
   tag_assignment_change_date_and_time: Date;
 
   @CreateDateColumn()
