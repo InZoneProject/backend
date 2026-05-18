@@ -78,8 +78,6 @@ services:
       - postgres
       - redis
       - emqx
-    volumes:
-      - /app/node_modules
     networks:
       - inzone_network
 
