@@ -39,6 +39,16 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Copy docker compose config to VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          source: "docker-compose.prod.yml"
+          target: ${{ secrets.PROD_COMPOSE_PATH }}
+          overwrite: true
+
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -52,6 +62,6 @@ jobs:
 
             DOCKER_IMAGE_NAME=${{ env.DOCKER_IMAGE_NAME }} docker compose -f docker-compose.prod.yml --env-file .env.prod pull backend
 
-            DOCKER_IMAGE_NAME=${{ env.DOCKER_IMAGE_NAME }} docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --remove-orphans backend
+            DOCKER_IMAGE_NAME=${{ env.DOCKER_IMAGE_NAME }} docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --force-recreate --remove-orphans backend
 
             docker image prune -f
