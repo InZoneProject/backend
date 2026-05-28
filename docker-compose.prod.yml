@@ -74,10 +74,13 @@ services:
       - .env.prod
     environment:
       NODE_OPTIONS: --max-old-space-size=4096
+      UPLOADS_DIR: /app/uploads
     depends_on:
       - postgres
       - redis
       - emqx
+    volumes:
+      - uploads_prod:/app/uploads
     networks:
       - inzone_network
 
@@ -86,6 +89,7 @@ volumes:
   redis_data_prod:
   emqx_data_prod:
   emqx_log_prod:
+  uploads_prod:
 
 networks:
   inzone_network:
