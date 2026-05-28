@@ -87,6 +87,11 @@ export class EmployeesService {
 
     await this.employeeRepository.save(employee);
 
+    inviteToken.is_used = true;
+    inviteToken.used_at = new Date();
+    inviteToken.used_by_employee = employee;
+    await this.inviteTokenRepository.save(inviteToken);
+
     this.notificationsGateway.emitOrganizationJoinedToEmployee(employeeId, {
       organization_id: inviteToken.organization.organization_id,
     });

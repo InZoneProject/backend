@@ -54,6 +54,7 @@ import { FRONTEND_ROUTES } from '../../shared/constants/frontend-routes.constant
 import { DoorSide } from '../buildings/enums/door-side.enum';
 import { UserRole } from '../auth/enums/user-role.enum';
 import { FILE_VALIDATION_CONSTANTS } from '../../shared/constants/file-validation.constants';
+import { NotificationsGateway } from '../realtime/notifications.gateway';
 
 @Injectable()
 export class OrganizationsService {
@@ -73,6 +74,7 @@ export class OrganizationsService {
     private readonly fileValidator: FileValidator,
     private readonly fileService: FileService,
     private readonly organizationMembersService: OrganizationMembersService,
+    private readonly notificationsGateway: NotificationsGateway,
   ) {}
 
   private mapProfilePhotoToPublicUrl(photoPath: string | null): string | null {
@@ -1183,6 +1185,10 @@ export class OrganizationsService {
     );
 
     await this.dataSource.getRepository(Employee).save(employee);
+
+    this.notificationsGateway.emitOrganizationRemovedFromEmployee(employeeId, {
+      organization_id: organizationId,
+    });
   }
 
   async deleteProfile(organizationAdminId: number): Promise<void> {

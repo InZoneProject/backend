@@ -34,7 +34,7 @@ interface NotificationPayload {
   created_at: Date;
 }
 
-interface OrganizationJoinedPayload {
+interface OrganizationChangedPayload {
   organization_id: number;
 }
 
@@ -146,12 +146,22 @@ export class NotificationsGateway implements OnGatewayConnection {
 
   emitOrganizationJoinedToEmployee(
     employeeId: number,
-    payload: OrganizationJoinedPayload,
+    payload: OrganizationChangedPayload,
   ): void {
     const roomName = `employee-${employeeId}`;
     this.server
       .to(roomName)
       .emit(REALTIME_CONSTANTS.EVENTS.ORGANIZATION_JOINED, payload);
+  }
+
+  emitOrganizationRemovedFromEmployee(
+    employeeId: number,
+    payload: OrganizationChangedPayload,
+  ): void {
+    const roomName = `employee-${employeeId}`;
+    this.server
+      .to(roomName)
+      .emit(REALTIME_CONSTANTS.EVENTS.ORGANIZATION_REMOVED, payload);
   }
 
   private getRoomName(client: AuthenticatedSocket): string | null {

@@ -9,6 +9,7 @@ import { OrganizationsController } from './organizations.controller';
 import { OrganizationsService } from './organizations.service';
 import { multerConfig } from '../../shared/config/multer.config';
 import { SharedModule } from '../../shared/shared.module';
+import { RealtimeModule } from '../realtime/realtime.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { SharedModule } from '../../shared/shared.module';
     ]),
     MulterModule.register(multerConfig),
     SharedModule,
+    RealtimeModule,
   ],
   controllers: [OrganizationsController],
   providers: [OrganizationsService],
