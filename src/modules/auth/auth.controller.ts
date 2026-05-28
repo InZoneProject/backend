@@ -100,14 +100,14 @@ export class AuthController {
   async verifyEmail(
     @Body() verifyDto: VerifyEmailDto,
     @Req() req: RequestWithUser,
-  ): Promise<{ is_verified: boolean }> {
+  ): Promise<AuthResponseDto & { is_verified: boolean }> {
     this.checkGlobalAdminAccess(req.user.role);
-    const isVerified = await this.authService.verifyEmail(
+
+    return await this.authService.verifyEmail(
       req.user.sub,
       req.user.role,
       verifyDto.code,
     );
-    return { is_verified: isVerified };
   }
 
   @Post('resend-code')

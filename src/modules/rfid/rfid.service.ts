@@ -1,9 +1,15 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { RfidReader } from './entities/rfid-reader.entity';
 import { RfidTag } from './entities/rfid-tag.entity';
 import { Door } from '../buildings/entities/door.entity';
+import { TagAdmin } from '../tag-admin/entities/tag-admin.entity';
+import { Employee } from '../employees/entities/employee.entity';
 import { OrganizationOwnershipValidator } from '../../shared/validators/organization-ownership.validator';
 import { TokenHashService } from '../../shared/services/token-hash.service';
 import { RFID_CONSTANTS } from './rfid.constants';
@@ -11,6 +17,7 @@ import { CreateRfidTagDto } from './dto/create-rfid-tag.dto';
 import { CreateRfidReaderDto } from './dto/create-rfid-reader.dto';
 import { UpdateRfidTagDto } from './dto/update-rfid-tag.dto';
 import { UpdateRfidReaderDto } from './dto/update-rfid-reader.dto';
+import { UserRole } from '../auth/enums/user-role.enum';
 
 @Injectable()
 export class RfidService {
@@ -21,9 +28,57 @@ export class RfidService {
     private readonly rfidTagRepository: Repository<RfidTag>,
     @InjectRepository(Door)
     private readonly doorRepository: Repository<Door>,
+    @InjectRepository(TagAdmin)
+    private readonly tagAdminRepository: Repository<TagAdmin>,
+    @InjectRepository(Employee)
+    private readonly employeeRepository: Repository<Employee>,
     private readonly organizationOwnershipValidator: OrganizationOwnershipValidator,
     private readonly tokenHashService: TokenHashService,
   ) {}
+
+  private async validateOrganizationAccess(
+    userId: number,
+    userRole: UserRole,
+    organizationId: number,
+  ): Promise<void> {
+    if (userRole === UserRole.ORGANIZATION_ADMIN) {
+      await this.organizationOwnershipValidator.validateOwnership(
+        userId,
+        organizationId,
+      );
+      return;
+    }
+
+    if (userRole === UserRole.TAG_ADMIN) {
+      const tagAdmin = await this.tagAdminRepository.findOne({
+        where: {
+          tag_admin_id: userId,
+          organization: { organization_id: organizationId },
+        },
+      });
+      if (tagAdmin) return;
+    }
+
+    throw new ForbiddenException('Access denied');
+  }
+
+  private async validateEmployeeInOrganization(
+    employeeId: number,
+    organizationId: number,
+  ): Promise<void> {
+    const employee = await this.employeeRepository
+      .createQueryBuilder('employee')
+      .innerJoin('employee.organizations', 'organization')
+      .where('employee.employee_id = :employeeId', { employeeId })
+      .andWhere('organization.organization_id = :organizationId', {
+        organizationId,
+      })
+      .getOne();
+
+    if (!employee) {
+      throw new NotFoundException('Employee not found in organization');
+    }
+  }
 
   async createRfidReader(
     userId: number,
@@ -80,10 +135,12 @@ export class RfidService {
 
   async createRfidTag(
     userId: number,
+    userRole: UserRole,
     createRfidTagDto: CreateRfidTagDto,
   ): Promise<RfidTag> {
-    await this.organizationOwnershipValidator.validateOwnership(
+    await this.validateOrganizationAccess(
       userId,
+      userRole,
       createRfidTagDto.organization_id,
     );
 
@@ -116,7 +173,11 @@ export class RfidService {
     await this.rfidReaderRepository.delete(readerId);
   }
 
-  async deleteRfidTag(userId: number, tagId: number): Promise<void> {
+  async deleteRfidTag(
+    userId: number,
+    userRole: UserRole,
+    tagId: number,
+  ): Promise<void> {
     const tag = await this.rfidTagRepository.findOne({
       where: { rfid_tag_id: tagId },
       relations: ['organization'],
@@ -128,8 +189,9 @@ export class RfidService {
       );
     }
 
-    await this.organizationOwnershipValidator.validateOwnership(
+    await this.validateOrganizationAccess(
       userId,
+      userRole,
       tag.organization.organization_id,
     );
 
@@ -138,6 +200,7 @@ export class RfidService {
 
   async updateRfidTag(
     userId: number,
+    userRole: UserRole,
     tagId: number,
     updateRfidTagDto: UpdateRfidTagDto,
   ): Promise<RfidTag> {
@@ -152,14 +215,73 @@ export class RfidService {
       );
     }
 
-    await this.organizationOwnershipValidator.validateOwnership(
+    await this.validateOrganizationAccess(
       userId,
+      userRole,
       tag.organization.organization_id,
     );
 
     tag.name = updateRfidTagDto.name;
 
     return this.rfidTagRepository.save(tag);
+  }
+
+  async getAssignedTagForEmployee(
+    userId: number,
+    userRole: UserRole,
+    employeeId: number,
+    organizationId: number,
+  ): Promise<RfidTag | null> {
+    await this.validateOrganizationAccess(userId, userRole, organizationId);
+    await this.validateEmployeeInOrganization(employeeId, organizationId);
+
+    return this.rfidTagRepository
+      .createQueryBuilder('tag')
+      .innerJoin('tag.tag_assignments', 'assignment')
+      .where('assignment.employee_id = :employeeId', { employeeId })
+      .andWhere('tag.organization_id = :organizationId', { organizationId })
+      .orderBy('assignment.tag_assignment_id', 'DESC')
+      .getOne();
+  }
+
+  async getAvailableTagsForEmployee(
+    userId: number,
+    userRole: UserRole,
+    employeeId: number,
+    organizationId: number,
+    offset: number,
+    limit: number,
+    search?: string,
+  ) {
+    await this.validateOrganizationAccess(userId, userRole, organizationId);
+    await this.validateEmployeeInOrganization(employeeId, organizationId);
+
+    const assignedTagIdsQuery = this.rfidTagRepository
+      .createQueryBuilder('assigned_tag')
+      .innerJoin('assigned_tag.tag_assignments', 'assignment')
+      .select('assigned_tag.rfid_tag_id')
+      .where('assigned_tag.organization_id = :organizationId', {
+        organizationId,
+      })
+      .andWhere('assignment.rfid_tag_id IS NOT NULL');
+
+    const query = this.rfidTagRepository
+      .createQueryBuilder('tag')
+      .where('tag.organization_id = :organizationId', { organizationId })
+      .andWhere(`tag.rfid_tag_id NOT IN (${assignedTagIdsQuery.getQuery()})`)
+      .setParameters(assignedTagIdsQuery.getParameters());
+
+    if (search) {
+      query.andWhere('tag.name ILIKE :search', { search: `%${search}%` });
+    }
+
+    const [items, total] = await query
+      .orderBy('tag.created_at', 'DESC')
+      .offset(offset)
+      .limit(limit)
+      .getManyAndCount();
+
+    return { items, total, offset, limit, employee_id: employeeId };
   }
 
   async updateRfidReader(

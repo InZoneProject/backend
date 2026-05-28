@@ -35,6 +35,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '../auth/enums/user-role.enum';
 import { PAGINATION_CONSTANTS } from '../../shared/constants/pagination.constants';
 import type { RequestWithUser } from '../auth/types/request-with-user.types';
+import { mapPhotoToAbsoluteUrl } from '../../shared/utils/photo-url.util';
 
 @ApiTags('Employees')
 @Controller('employees')
@@ -53,6 +54,14 @@ export class EmployeesController {
     return this.employeesService.joinOrganization(req.user.sub, joinDto);
   }
 
+  @Get('consent-status')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.EMPLOYEE)
+  @ApiBearerAuth('JWT-auth')
+  async getConsentStatus(@Req() req: RequestWithUser) {
+    return this.employeesService.getConsentStatus(req.user.sub);
+  }
+
   @Patch('profile/photo')
   @UseGuards(JwtAuthGuard, RolesGuard, EmailVerificationGuard)
   @Roles(UserRole.EMPLOYEE)
@@ -64,7 +73,15 @@ export class EmployeesController {
     @UploadedFile() photo: Express.Multer.File,
     @Req() req: RequestWithUser,
   ) {
-    return this.employeesService.updateProfilePhoto(req.user.sub, photo);
+    const response = await this.employeesService.updateProfilePhoto(
+      req.user.sub,
+      photo,
+    );
+
+    return {
+      ...response,
+      photo: mapPhotoToAbsoluteUrl(response.photo, req),
+    };
   }
 
   @Patch('profile/info')
@@ -107,26 +124,17 @@ export class EmployeesController {
     );
   }
 
-  @Get('organization/:id')
-  @UseGuards(JwtAuthGuard, RolesGuard, EmailVerificationGuard)
-  @Roles(UserRole.EMPLOYEE)
-  @ApiBearerAuth('JWT-auth')
-  async getOrganizationInfo(
-    @Param('id', ParseIntPipe) organizationId: number,
-    @Req() req: RequestWithUser,
-  ) {
-    return this.employeesService.getOrganizationInfo(
-      req.user.sub,
-      organizationId,
-    );
-  }
-
   @Get('profile')
   @UseGuards(JwtAuthGuard, RolesGuard, EmailVerificationGuard)
   @Roles(UserRole.EMPLOYEE)
   @ApiBearerAuth('JWT-auth')
   async getProfile(@Req() req: RequestWithUser) {
-    return this.employeesService.getProfile(req.user.sub);
+    const response = await this.employeesService.getProfile(req.user.sub);
+
+    return {
+      ...response,
+      photo: mapPhotoToAbsoluteUrl(response.photo, req),
+    };
   }
 
   @Delete('profile')

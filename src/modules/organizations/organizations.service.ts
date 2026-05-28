@@ -492,7 +492,8 @@ export class OrganizationsService {
   }
 
   async getOrganizationInfo(
-    organizationAdminId: number,
+    userId: number,
+    userRole: UserRole,
     organizationId: number,
   ): Promise<
     Pick<
@@ -500,11 +501,16 @@ export class OrganizationsService {
       'organization_id' | 'title' | 'description' | 'created_at'
     >
   > {
-    const organization =
-      await this.organizationOwnershipValidator.validateOwnership(
-        organizationAdminId,
-        organizationId,
+    await this.validateOrganizationMembership(userId, userRole, organizationId);
+    const organization = await this.organizationRepository.findOne({
+      where: { organization_id: organizationId },
+    });
+
+    if (!organization) {
+      throw new NotFoundException(
+        ORGANIZATIONS_CONSTANTS.ERROR_MESSAGES.ORGANIZATION_NOT_FOUND,
       );
+    }
 
     return {
       organization_id: organization.organization_id,
@@ -719,15 +725,13 @@ export class OrganizationsService {
 
   async getOrganizationMembers(
     userId: number,
+    userRole: UserRole,
     organizationId: number,
     search?: string,
     offset: number = 0,
     limit: number = 20,
   ) {
-    await this.organizationOwnershipValidator.validateOwnership(
-      userId,
-      organizationId,
-    );
+    await this.validateOrganizationMembership(userId, userRole, organizationId);
 
     const orgAdmins = this.applyNameSearch(
       this.dataSource

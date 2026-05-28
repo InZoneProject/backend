@@ -288,6 +288,8 @@ export class LocationsGateway implements OnGatewayConnection {
       zone_id: zoneId,
       previous_zone_id: previousZoneId,
       floor_id: zone?.floor?.floor_id ?? door?.floor?.floor_id ?? null,
+      floor_number:
+        zone?.floor?.floor_number ?? door?.floor?.floor_number ?? null,
       previous_floor_id: previousZone?.floor?.floor_id ?? null,
       full_name: employee?.full_name ?? '',
       email: employee?.email ?? '',

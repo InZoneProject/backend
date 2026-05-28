@@ -9,6 +9,7 @@ import { EmployeesService } from './employees.service';
 import { EmployeesController } from './employees.controller';
 import { SharedModule } from '../../shared/shared.module';
 import { multerConfig } from '../../shared/config/multer.config';
+import { RealtimeModule } from '../realtime/realtime.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { multerConfig } from '../../shared/config/multer.config';
     JwtModule.register({}),
     MulterModule.register(multerConfig),
     SharedModule,
+    RealtimeModule,
   ],
   controllers: [EmployeesController],
   providers: [EmployeesService],

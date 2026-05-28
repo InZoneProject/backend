@@ -19,6 +19,7 @@ import { FileService } from '../../shared/services/file.service';
 import { OrganizationMembersService } from '../../shared/services/organization-members.service';
 import { AUTH_CONSTANTS } from '../auth/auth.constants';
 import { EMPLOYEES_CONSTANTS } from './employees.constants';
+import { NotificationsGateway } from '../realtime/notifications.gateway';
 
 @Injectable()
 export class EmployeesService {
@@ -31,6 +32,7 @@ export class EmployeesService {
     private readonly fileValidator: FileValidator,
     private readonly fileService: FileService,
     private readonly organizationMembersService: OrganizationMembersService,
+    private readonly notificationsGateway: NotificationsGateway,
   ) {}
 
   async joinOrganization(
@@ -73,16 +75,43 @@ export class EmployeesService {
       employee.organizations = [];
     }
 
-    employee.organizations.push(inviteToken.organization);
+    const alreadyJoined = employee.organizations.some(
+      (organization) =>
+        organization.organization_id ===
+        inviteToken.organization?.organization_id,
+    );
+
+    if (!alreadyJoined) {
+      employee.organizations.push(inviteToken.organization);
+    }
+
     await this.employeeRepository.save(employee);
 
-    inviteToken.is_used = true;
-    inviteToken.used_at = new Date();
-    inviteToken.used_by_employee = employee;
-    await this.inviteTokenRepository.save(inviteToken);
+    this.notificationsGateway.emitOrganizationJoinedToEmployee(employeeId, {
+      organization_id: inviteToken.organization.organization_id,
+    });
 
     return {
       organization_id: inviteToken.organization.organization_id,
+    };
+  }
+
+  async getConsentStatus(
+    employeeId: number,
+  ): Promise<{ consent_given: boolean }> {
+    const employee = await this.employeeRepository.findOne({
+      where: { employee_id: employeeId },
+      select: ['employee_id', 'is_consent_given'],
+    });
+
+    if (!employee) {
+      throw new NotFoundException(
+        EMPLOYEES_CONSTANTS.ERROR_MESSAGES.EMPLOYEE_NOT_FOUND,
+      );
+    }
+
+    return {
+      consent_given: employee.is_consent_given,
     };
   }
 
@@ -171,31 +200,6 @@ export class EmployeesService {
     const paginatedOrganizations = organizations.slice(offset, offset + limit);
 
     return { organizations: paginatedOrganizations, total };
-  }
-
-  async getOrganizationInfo(employeeId: number, organizationId: number) {
-    const employee = await this.employeeRepository.findOne({
-      where: { employee_id: employeeId },
-      relations: ['organizations'],
-    });
-
-    if (!employee) {
-      throw new NotFoundException(
-        EMPLOYEES_CONSTANTS.ERROR_MESSAGES.EMPLOYEE_NOT_FOUND,
-      );
-    }
-
-    const organization = employee.organizations?.find(
-      (org) => org.organization_id === organizationId,
-    );
-
-    if (!organization) {
-      throw new NotFoundException(
-        EMPLOYEES_CONSTANTS.ERROR_MESSAGES.ORGANIZATION_NOT_FOUND,
-      );
-    }
-
-    return organization;
   }
 
   async getProfile(employeeId: number) {

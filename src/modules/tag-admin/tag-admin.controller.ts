@@ -43,6 +43,19 @@ import type { RequestWithUser } from '../auth/types/request-with-user.types';
 export class TagAdminController {
   constructor(private readonly tagAdminService: TagAdminService) {}
 
+  private getRequestOrigin(req: RequestWithUser): string {
+    const forwardedProtocol = req.headers['x-forwarded-proto'];
+    const forwardedHost = req.headers['x-forwarded-host'];
+    const protocol = Array.isArray(forwardedProtocol)
+      ? forwardedProtocol[0]
+      : forwardedProtocol || req.protocol;
+    const host = Array.isArray(forwardedHost)
+      ? forwardedHost[0]
+      : forwardedHost || req.get('host');
+
+    return `${protocol}://${host}`;
+  }
+
   @Patch('profile/photo')
   @ApiConsumes('multipart/form-data')
   @ApiBody({ type: UpdateProfilePhotoDto })
@@ -51,7 +64,11 @@ export class TagAdminController {
     @UploadedFile() photo: Express.Multer.File,
     @Req() req: RequestWithUser,
   ) {
-    return this.tagAdminService.updateProfilePhoto(req.user.sub, photo);
+    return this.tagAdminService.updateProfilePhoto(
+      req.user.sub,
+      photo,
+      this.getRequestOrigin(req),
+    );
   }
 
   @Patch('profile/info')
@@ -64,18 +81,21 @@ export class TagAdminController {
 
   @Get('profile')
   async getProfile(@Req() req: RequestWithUser) {
-    return this.tagAdminService.getProfile(req.user.sub);
+    return this.tagAdminService.getProfile(
+      req.user.sub,
+      this.getRequestOrigin(req),
+    );
+  }
+
+  @Get('organization')
+  async getOrganization(@Req() req: RequestWithUser) {
+    return this.tagAdminService.getOrganization(req.user.sub);
   }
 
   @Delete('profile')
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteProfile(@Req() req: RequestWithUser): Promise<void> {
     await this.tagAdminService.deleteProfile(req.user.sub);
-  }
-
-  @Get('organization')
-  async getOrganizationInfo(@Req() req: RequestWithUser) {
-    return this.tagAdminService.getOrganizationInfo(req.user.sub);
   }
 
   @Post('tag-assignments')
@@ -112,6 +132,38 @@ export class TagAdminController {
       search,
       offset,
       limit,
+      this.getRequestOrigin(req),
+    );
+  }
+
+  @Get('employees/:employeeId/tag')
+  async getAssignedTagForEmployee(
+    @Param('employeeId', ParseIntPipe) employeeId: number,
+    @Req() req: RequestWithUser,
+  ) {
+    return this.tagAdminService.getAssignedTagForEmployee(
+      req.user.sub,
+      employeeId,
+    );
+  }
+
+  @Get('employees/:employeeId/available-tags')
+  @ApiQuery({ name: 'search', required: false })
+  @ApiQuery({ name: 'offset', required: false })
+  @ApiQuery({ name: 'limit', required: false })
+  async getAvailableTagsForEmployee(
+    @Param('employeeId', ParseIntPipe) employeeId: number,
+    @Req() req: RequestWithUser,
+    @Query('search') search?: string,
+    @Query('offset', new DefaultValuePipe(0), ParseIntPipe) offset?: number,
+    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit?: number,
+  ) {
+    return this.tagAdminService.getAvailableTagsForEmployee(
+      req.user.sub,
+      employeeId,
+      offset,
+      limit,
+      search,
     );
   }
 }

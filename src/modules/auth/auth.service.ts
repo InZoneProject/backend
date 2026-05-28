@@ -118,6 +118,7 @@ export class AuthService implements OnModuleInit {
 
     return {
       access_token: this.jwtService.sign(payload),
+      is_verified: true,
     };
   }
 
@@ -148,6 +149,7 @@ export class AuthService implements OnModuleInit {
       full_name,
       email,
       password: hashedPassword,
+      is_email_verified: false,
     });
 
     storedToken.is_used = true;
@@ -165,6 +167,7 @@ export class AuthService implements OnModuleInit {
 
     return {
       access_token: this.jwtService.sign(tokenPayload),
+      is_verified: false,
     };
   }
 
@@ -198,6 +201,7 @@ export class AuthService implements OnModuleInit {
 
     return {
       access_token: this.jwtService.sign(payload),
+      is_verified: admin.is_email_verified,
     };
   }
 
@@ -235,6 +239,7 @@ export class AuthService implements OnModuleInit {
       email,
       password: hashedPassword,
       organization: storedToken.organization,
+      is_email_verified: false,
     });
 
     storedToken.is_used = true;
@@ -252,6 +257,7 @@ export class AuthService implements OnModuleInit {
 
     return {
       access_token: this.jwtService.sign(tokenPayload),
+      is_verified: false,
     };
   }
 
@@ -285,6 +291,7 @@ export class AuthService implements OnModuleInit {
 
     return {
       access_token: this.jwtService.sign(payload),
+      is_verified: admin.is_email_verified,
     };
   }
 
@@ -309,6 +316,7 @@ export class AuthService implements OnModuleInit {
       full_name,
       email,
       password: hashedPassword,
+      is_email_verified: false,
     });
 
     await this.createAndSendVerificationCode(email, newEmployee);
@@ -321,6 +329,7 @@ export class AuthService implements OnModuleInit {
 
     return {
       access_token: this.jwtService.sign(payload),
+      is_verified: false,
     };
   }
 
@@ -354,6 +363,7 @@ export class AuthService implements OnModuleInit {
 
     return {
       access_token: this.jwtService.sign(payload),
+      is_verified: employee.is_email_verified,
     };
   }
 
@@ -361,7 +371,7 @@ export class AuthService implements OnModuleInit {
     userId: number,
     role: UserRole,
     code: string,
-  ): Promise<boolean> {
+  ): Promise<AuthResponseDto & { is_verified: boolean }> {
     const user = await this.getUserByRole(userId, role);
 
     if (!user) {
@@ -398,7 +408,14 @@ export class AuthService implements OnModuleInit {
     await this.saveUserByRole(user, role);
     await this.emailVerificationRepository.remove(verification);
 
-    return true;
+    return {
+      access_token: this.jwtService.sign({
+        sub: userId,
+        role,
+        is_email_verified: true,
+      }),
+      is_verified: true,
+    };
   }
 
   async resendVerificationCode(userId: number, role: UserRole): Promise<void> {

@@ -2145,13 +2145,8 @@ export class BuildingsService {
 
     const zones = await this.zoneGeometryService.loadZonesForBuilding(
       floor.building.building_id,
-      floorId,
-      true,
     );
     const zonesById = new Map(zones.map((zone) => [zone.zone_id, zone]));
-    if (zonesById.size === 0) {
-      return { items: [], total: 0, offset, limit };
-    }
 
     const employees = await this.dataSource
       .getRepository(Employee)
@@ -2167,6 +2162,7 @@ export class BuildingsService {
         'employee.full_name',
         'employee.email',
         'employee.photo',
+        'employee.phone',
       ])
       .getMany();
 
@@ -2178,6 +2174,40 @@ export class BuildingsService {
       SCAN_STATE_CACHE_CONSTANTS.KEYS.CURRENT_ZONE(employee.employee_id),
     );
     const currentZoneByCacheKey = await this.redisService.getStrings(cacheKeys);
+    const doorRepository = this.dataSource.getRepository(Door);
+    const scanEventRepository = this.dataSource.getRepository(ScanEvent);
+    const doors = await doorRepository.find({
+      where: {
+        floor: { building: { building_id: floor.building.building_id } },
+      },
+      relations: ['rfid_reader'],
+    });
+    const readerIds = doors
+      .map((door) => door.rfid_reader?.rfid_reader_id)
+      .filter((id): id is number => id !== undefined);
+    const latestScanAtByEmployeeId = new Map<number, Date>();
+
+    if (readerIds.length > 0) {
+      const scans = await scanEventRepository
+        .createQueryBuilder('scan_event')
+        .leftJoinAndSelect('scan_event.rfid_tag', 'rfid_tag')
+        .leftJoinAndSelect('rfid_tag.tag_assignments', 'tag_assignment')
+        .leftJoinAndSelect('tag_assignment.employee', 'employee')
+        .leftJoinAndSelect('scan_event.rfid_reader', 'rfid_reader')
+        .where('rfid_reader.rfid_reader_id IN (:...readerIds)', { readerIds })
+        .orderBy('scan_event.created_at', 'ASC')
+        .getMany();
+
+      for (const scan of scans) {
+        const assignment = scan.rfid_tag.tag_assignments[0];
+        if (!assignment?.employee) continue;
+        latestScanAtByEmployeeId.set(
+          assignment.employee.employee_id,
+          scan.created_at,
+        );
+      }
+    }
+
     const query = search.trim().toLowerCase();
 
     const items = employees
@@ -2185,38 +2215,41 @@ export class BuildingsService {
         const cachedZoneId = currentZoneByCacheKey.get(
           SCAN_STATE_CACHE_CONSTANTS.KEYS.CURRENT_ZONE(employee.employee_id),
         );
-        if (
+        const currentZoneId =
           cachedZoneId === undefined ||
           cachedZoneId === null ||
           cachedZoneId === 'null'
-        ) {
-          return null;
-        }
+            ? null
+            : Number(cachedZoneId);
+        const zone =
+          currentZoneId !== null && Number.isFinite(currentZoneId)
+            ? zonesById.get(currentZoneId)
+            : null;
+        const lastScanAt =
+          latestScanAtByEmployeeId.get(employee.employee_id) ?? null;
 
-        const currentZoneId = Number(cachedZoneId);
-        const zone = Number.isFinite(currentZoneId)
-          ? zonesById.get(currentZoneId)
-          : null;
-        if (!zone) return null;
-
-        const zoneFloorId = zone.floor?.floor_id ?? floorId;
         return {
           employee_id: employee.employee_id,
           full_name: employee.full_name,
           email: employee.email,
+          phone: employee.phone,
           photo: employee.photo,
-          zone_id: currentZoneId,
-          zone_title: zone.title,
-          floor_id: zoneFloorId,
-          last_scan_at: null,
+          zone_id: zone?.zone_id ?? null,
+          zone_title: zone?.title ?? '',
+          floor_id: zone?.floor?.floor_id ?? null,
+          floor_number: zone?.floor?.floor_number ?? null,
+          last_scan_at: lastScanAt,
         };
       })
-      .filter((item): item is NonNullable<typeof item> => item !== null)
       .filter((item) => {
         if (!query) return true;
-        return [item.full_name, item.email, item.zone_title].some((value) =>
-          value.toLowerCase().includes(query),
-        );
+        return [
+          item.full_name,
+          item.email,
+          item.phone || '',
+          item.zone_title,
+          item.floor_number === null ? '' : String(item.floor_number),
+        ].some((value) => value.toLowerCase().includes(query));
       })
       .sort(
         (first, second) =>

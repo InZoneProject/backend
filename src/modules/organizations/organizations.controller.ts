@@ -224,13 +224,14 @@ export class OrganizationsController {
   }
 
   @Get(':id/info')
-  @Roles(UserRole.ORGANIZATION_ADMIN)
+  @Roles(UserRole.ORGANIZATION_ADMIN, UserRole.TAG_ADMIN, UserRole.EMPLOYEE)
   async getOrganizationInfo(
     @Param('id', ParseIntPipe) organizationId: number,
     @Req() req: RequestWithUser,
   ) {
     return this.organizationsService.getOrganizationInfo(
       req.user.sub,
+      req.user.role,
       organizationId,
     );
   }
@@ -395,7 +396,7 @@ export class OrganizationsController {
   }
 
   @Get(':id/members')
-  @Roles(UserRole.ORGANIZATION_ADMIN)
+  @Roles(UserRole.ORGANIZATION_ADMIN, UserRole.TAG_ADMIN)
   @ApiQuery({ name: 'search', required: false })
   @ApiQuery({ name: 'offset', required: false })
   @ApiQuery({ name: 'limit', required: false })
@@ -408,6 +409,7 @@ export class OrganizationsController {
   ) {
     const response = await this.organizationsService.getOrganizationMembers(
       req.user.sub,
+      req.user.role,
       organizationId,
       search,
       offset,

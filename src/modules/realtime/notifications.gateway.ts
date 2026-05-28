@@ -34,6 +34,10 @@ interface NotificationPayload {
   created_at: Date;
 }
 
+interface OrganizationJoinedPayload {
+  organization_id: number;
+}
+
 @WebSocketGateway({
   namespace: '/notifications',
   cors: {
@@ -138,6 +142,16 @@ export class NotificationsGateway implements OnGatewayConnection {
     this.server
       .to(roomName)
       .emit(REALTIME_CONSTANTS.EVENTS.NOTIFICATION_RECEIVED, notification);
+  }
+
+  emitOrganizationJoinedToEmployee(
+    employeeId: number,
+    payload: OrganizationJoinedPayload,
+  ): void {
+    const roomName = `employee-${employeeId}`;
+    this.server
+      .to(roomName)
+      .emit(REALTIME_CONSTANTS.EVENTS.ORGANIZATION_JOINED, payload);
   }
 
   private getRoomName(client: AuthenticatedSocket): string | null {

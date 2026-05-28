@@ -10,17 +10,15 @@ import { TagAdmin } from './entities/tag-admin.entity';
 import { TagAssignment } from './entities/tag-assignment.entity';
 import { Employee } from '../employees/entities/employee.entity';
 import { RfidTag } from '../rfid/entities/rfid-tag.entity';
-import { OrganizationAdmin } from '../organizations/entities/organization-admin.entity';
 import { AssignTagToEmployeeDto } from './dto/assign-tag-to-employee.dto';
 import { EmployeeWithTagListItemDto } from './dto/employee-with-tag-list-item.dto';
 import { UpdateProfileInfoDto } from '../../shared/dto/update-profile-info.dto';
 import { UpdateProfilePhotoResponseDto } from '../../shared/dto/update-profile-photo-response.dto';
 import { UpdateProfileInfoResponseDto } from '../../shared/dto/update-profile-info-response.dto';
-import { OrganizationMemberRole } from '../../shared/enums/organization-member-role.enum';
-import { OrganizationMemberRawDto } from '../../shared/dto/organization-member-raw.dto';
+import { basename } from 'path';
 import { FileValidator } from '../../shared/validators/file.validator';
 import { FileService } from '../../shared/services/file.service';
-import { OrganizationMembersService } from '../../shared/services/organization-members.service';
+import { FILE_VALIDATION_CONSTANTS } from '../../shared/constants/file-validation.constants';
 import { TAG_ADMIN_CONSTANTS } from './tag-admin.constants';
 
 @Injectable()
@@ -37,12 +35,38 @@ export class TagAdminService {
     private readonly fileValidator: FileValidator,
     private readonly fileService: FileService,
     private readonly dataSource: DataSource,
-    private readonly organizationMembersService: OrganizationMembersService,
   ) {}
+
+  private mapProfilePhotoToPublicUrl(
+    photoPath: string | null,
+    requestOrigin?: string,
+  ): string | null {
+    if (!photoPath) return null;
+    if (photoPath.startsWith('http://') || photoPath.startsWith('https://')) {
+      return photoPath;
+    }
+
+    const uploadsPrefix = FILE_VALIDATION_CONSTANTS.UPLOADS_URL_PREFIX.replace(
+      /\/$/,
+      '',
+    );
+    const normalizedPath = photoPath.replace(/\\/g, '/');
+    const uploadsIndex = normalizedPath.lastIndexOf('/uploads/');
+
+    const publicPath =
+      uploadsIndex >= 0
+        ? normalizedPath.slice(uploadsIndex)
+        : `${uploadsPrefix}/${basename(normalizedPath)}`;
+
+    return requestOrigin
+      ? `${requestOrigin.replace(/\/$/, '')}${publicPath}`
+      : publicPath;
+  }
 
   async updateProfilePhoto(
     tagAdminId: number,
     photo: Express.Multer.File,
+    requestOrigin?: string,
   ): Promise<UpdateProfilePhotoResponseDto> {
     this.fileValidator.validateImageFile(photo);
 
@@ -63,7 +87,9 @@ export class TagAdminService {
     tagAdmin.photo = photo.path;
     await this.tagAdminRepository.save(tagAdmin);
 
-    return { photo: tagAdmin.photo };
+    return {
+      photo: this.mapProfilePhotoToPublicUrl(tagAdmin.photo, requestOrigin)!,
+    };
   }
 
   async updateProfileInfo(
@@ -72,6 +98,7 @@ export class TagAdminService {
   ): Promise<UpdateProfileInfoResponseDto> {
     const tagAdmin = await this.tagAdminRepository.findOne({
       where: { tag_admin_id: tagAdminId },
+      relations: ['organization'],
     });
 
     if (!tagAdmin) {
@@ -92,12 +119,13 @@ export class TagAdminService {
     };
   }
 
-  async getProfile(tagAdminId: number) {
+  async getProfile(tagAdminId: number, requestOrigin?: string) {
     const tagAdmin = await this.tagAdminRepository.findOne({
       where: { tag_admin_id: tagAdminId },
+      relations: ['organization'],
     });
 
-    if (!tagAdmin) {
+    if (!tagAdmin || !tagAdmin.organization) {
       throw new NotFoundException(
         TAG_ADMIN_CONSTANTS.ERROR_MESSAGES.TAG_ADMIN_NOT_FOUND,
       );
@@ -105,32 +133,32 @@ export class TagAdminService {
 
     return {
       tag_admin_id: tagAdmin.tag_admin_id,
+      organization_id: tagAdmin.organization.organization_id,
       full_name: tagAdmin.full_name,
       email: tagAdmin.email,
       phone: tagAdmin.phone,
-      photo: tagAdmin.photo,
+      photo: this.mapProfilePhotoToPublicUrl(tagAdmin.photo, requestOrigin),
     };
   }
 
-  async getOrganizationInfo(tagAdminId: number) {
+  async getOrganization(tagAdminId: number) {
     const tagAdmin = await this.tagAdminRepository.findOne({
       where: { tag_admin_id: tagAdminId },
       relations: ['organization'],
     });
 
-    if (!tagAdmin) {
+    if (!tagAdmin || !tagAdmin.organization) {
       throw new NotFoundException(
         TAG_ADMIN_CONSTANTS.ERROR_MESSAGES.TAG_ADMIN_NOT_FOUND,
       );
     }
 
-    if (!tagAdmin.organization) {
-      throw new NotFoundException(
-        TAG_ADMIN_CONSTANTS.ERROR_MESSAGES.ORGANIZATION_NOT_FOUND,
-      );
-    }
-
-    return tagAdmin.organization;
+    return {
+      organization_id: tagAdmin.organization.organization_id,
+      title: tagAdmin.organization.title,
+      description: tagAdmin.organization.description,
+      created_at: tagAdmin.organization.created_at,
+    };
   }
 
   async assignTagToEmployee(
@@ -170,18 +198,11 @@ export class TagAdminService {
 
     const employee = await this.employeeRepository.findOne({
       where: { employee_id: assignTagDto.employee_id },
-      relations: ['positions'],
     });
 
     if (!employee) {
       throw new NotFoundException(
         TAG_ADMIN_CONSTANTS.ERROR_MESSAGES.EMPLOYEE_NOT_FOUND,
-      );
-    }
-
-    if (!employee.positions || employee.positions.length === 0) {
-      throw new BadRequestException(
-        TAG_ADMIN_CONSTANTS.ERROR_MESSAGES.EMPLOYEE_HAS_NO_POSITION,
       );
     }
 
@@ -318,7 +339,13 @@ export class TagAdminService {
     search?: string,
     offset: number = 0,
     limit: number = 20,
-  ): Promise<EmployeeWithTagListItemDto[]> {
+    requestOrigin?: string,
+  ): Promise<{
+    items: EmployeeWithTagListItemDto[];
+    total: number;
+    offset: number;
+    limit: number;
+  }> {
     const tagAdmin = await this.tagAdminRepository.findOne({
       where: { tag_admin_id: tagAdminId },
       relations: ['organization'],
@@ -332,51 +359,20 @@ export class TagAdminService {
 
     const organizationId = tagAdmin.organization.organization_id;
 
-    const orgAdmins = this.dataSource
-      .createQueryBuilder(OrganizationAdmin, 'org_admin')
-      .leftJoin('org_admin.organizations', 'org')
-      .where('org.organization_id = :organizationId', { organizationId })
-      .andWhere(
-        search ? 'org_admin.full_name ILIKE :search' : '1=1',
-        search ? { search: `%${search}%` } : {},
-      )
-      .select('org_admin.organization_admin_id', 'id')
-      .addSelect('org_admin.full_name', 'full_name')
-      .addSelect('org_admin.email', 'email')
-      .addSelect('org_admin.photo', 'photo')
-      .addSelect(`'${OrganizationMemberRole.ORGANIZATION_ADMIN}'`, 'role')
-      .addSelect('NULL', 'rfid_tag_id')
-      .addSelect('org_admin.created_at', 'created_at')
-      .addSelect('1', 'sort_order');
+    const latestAssignment = this.dataSource
+      .createQueryBuilder()
+      .select('ta.employee_id', 'employee_id')
+      .addSelect('MAX(ta.tag_assignment_id)', 'latest_tag_assignment_id')
+      .from('tag_assignment', 'ta')
+      .innerJoin('rfid_tag', 'sub_tag', 'sub_tag.rfid_tag_id = ta.rfid_tag_id')
+      .where('sub_tag.organization_id = :organizationId', { organizationId })
+      .groupBy('ta.employee_id');
 
-    const tagAdmins = this.dataSource
-      .createQueryBuilder(TagAdmin, 'tag_admin')
-      .where('tag_admin.organization_id = :organizationId', { organizationId })
-      .andWhere(
-        search ? 'tag_admin.full_name ILIKE :search' : '1=1',
-        search ? { search: `%${search}%` } : {},
-      )
-      .select('tag_admin.tag_admin_id', 'id')
-      .addSelect('tag_admin.full_name', 'full_name')
-      .addSelect('tag_admin.email', 'email')
-      .addSelect('tag_admin.photo', 'photo')
-      .addSelect(`'${OrganizationMemberRole.TAG_ADMIN}'`, 'role')
-      .addSelect('NULL', 'rfid_tag_id')
-      .addSelect('tag_admin.created_at', 'created_at')
-      .addSelect('2', 'sort_order');
-
-    const employees = this.dataSource
+    const employeesQuery = this.dataSource
       .createQueryBuilder(Employee, 'employee')
       .leftJoin('employee.organizations', 'emp_org')
-      .leftJoin('employee.positions', 'emp_pos')
       .leftJoin(
-        (subQuery) => {
-          return subQuery
-            .select('ta.employee_id', 'employee_id')
-            .addSelect('MAX(ta.tag_assignment_id)', 'latest_tag_assignment_id')
-            .from('tag_assignment', 'ta')
-            .groupBy('ta.employee_id');
-        },
+        `(${latestAssignment.getQuery()})`,
         'latest_ta',
         'latest_ta.employee_id = employee.employee_id',
       )
@@ -395,54 +391,137 @@ export class TagAdminService {
       .addSelect('employee.full_name', 'full_name')
       .addSelect('employee.email', 'email')
       .addSelect('employee.photo', 'photo')
-      .addSelect(`'${OrganizationMemberRole.EMPLOYEE}'`, 'role')
+      .addSelect('employee.phone', 'phone')
       .addSelect(
-        `CASE WHEN rfid_tag.organization_id = :organizationId THEN rfid_tag.rfid_tag_id ELSE NULL END`,
-        'rfid_tag_id',
+        `CASE WHEN rfid_tag.organization_id = :organizationId THEN true ELSE false END`,
+        'has_assigned_tag',
       )
       .addSelect('employee.created_at', 'created_at')
-      .addSelect('3', 'sort_order')
-      .addSelect('ARRAY_AGG(DISTINCT emp_pos.position_id)', 'position_ids')
-      .groupBy('employee.employee_id')
-      .addGroupBy('employee.full_name')
-      .addGroupBy('employee.email')
-      .addGroupBy('employee.photo')
-      .addGroupBy('employee.created_at')
-      .addGroupBy('rfid_tag.rfid_tag_id')
-      .addGroupBy('rfid_tag.organization_id');
+      .setParameters(latestAssignment.getParameters())
+      .orderBy('employee.created_at', 'DESC')
+      .offset(offset)
+      .limit(limit);
 
-    type EmployeeWithTagRaw = OrganizationMemberRawDto & {
-      rfid_tag_id: number | null;
+    type EmployeeWithTagRaw = {
+      id: number;
+      full_name: string;
+      email: string;
+      photo: string | null;
+      phone: string | null;
+      has_assigned_tag: boolean;
+      created_at: Date;
     };
 
-    type EmployeeWithTagExtra = {
-      rfid_tag_id: number | null;
-    };
+    const [items, total] = await Promise.all([
+      employeesQuery.getRawMany<EmployeeWithTagRaw>(),
+      employeesQuery.clone().offset(undefined).limit(undefined).getCount(),
+    ]);
 
-    const baseResults =
-      await this.organizationMembersService.buildMembersResponseWithExtras<EmployeeWithTagExtra>(
-        [orgAdmins, tagAdmins, employees],
-        offset,
-        limit,
-        (raw: EmployeeWithTagRaw): EmployeeWithTagExtra => ({
-          rfid_tag_id: raw.rfid_tag_id ?? null,
+    return {
+      items: items.map(
+        (result): EmployeeWithTagListItemDto => ({
+          id: result.id,
+          full_name: result.full_name,
+          email: result.email,
+          photo: this.mapProfilePhotoToPublicUrl(result.photo, requestOrigin),
+          phone: result.phone,
+          has_assigned_tag: Boolean(result.has_assigned_tag),
+          created_at: result.created_at,
         }),
+      ),
+      total,
+      offset,
+      limit,
+    };
+  }
+
+  async getAssignedTagForEmployee(
+    tagAdminId: number,
+    employeeId: number,
+  ): Promise<RfidTag | null> {
+    const organizationId = await this.getTagAdminOrganizationId(tagAdminId);
+    await this.validateEmployeeInOrganization(employeeId, organizationId);
+
+    return this.rfidTagRepository
+      .createQueryBuilder('tag')
+      .innerJoin('tag.tag_assignments', 'assignment')
+      .where('assignment.employee_id = :employeeId', { employeeId })
+      .andWhere('tag.organization_id = :organizationId', { organizationId })
+      .orderBy('assignment.tag_assignment_id', 'DESC')
+      .getOne();
+  }
+
+  async getAvailableTagsForEmployee(
+    tagAdminId: number,
+    employeeId: number,
+    offset: number = 0,
+    limit: number = 20,
+    search?: string,
+  ) {
+    const organizationId = await this.getTagAdminOrganizationId(tagAdminId);
+    await this.validateEmployeeInOrganization(employeeId, organizationId);
+
+    const assignedTagIdsQuery = this.rfidTagRepository
+      .createQueryBuilder('assigned_tag')
+      .innerJoin('assigned_tag.tag_assignments', 'assignment')
+      .select('assigned_tag.rfid_tag_id')
+      .where('assigned_tag.organization_id = :organizationId', {
+        organizationId,
+      })
+      .andWhere('assignment.rfid_tag_id IS NOT NULL');
+
+    const query = this.rfidTagRepository
+      .createQueryBuilder('tag')
+      .where('tag.organization_id = :organizationId', { organizationId })
+      .andWhere(`tag.rfid_tag_id NOT IN (${assignedTagIdsQuery.getQuery()})`)
+      .setParameters(assignedTagIdsQuery.getParameters());
+
+    if (search) {
+      query.andWhere('tag.name ILIKE :search', { search: `%${search}%` });
+    }
+
+    const [items, total] = await query
+      .orderBy('tag.created_at', 'DESC')
+      .offset(offset)
+      .limit(limit)
+      .getManyAndCount();
+
+    return { items, total, offset, limit, employee_id: employeeId };
+  }
+
+  private async getTagAdminOrganizationId(tagAdminId: number): Promise<number> {
+    const tagAdmin = await this.tagAdminRepository.findOne({
+      where: { tag_admin_id: tagAdminId },
+      relations: ['organization'],
+    });
+
+    if (!tagAdmin || !tagAdmin.organization) {
+      throw new NotFoundException(
+        TAG_ADMIN_CONSTANTS.ERROR_MESSAGES.TAG_ADMIN_NOT_FOUND,
       );
+    }
 
-    return baseResults.map(
-      (result): EmployeeWithTagListItemDto => ({
-        id: result.id,
-        full_name: result.full_name,
-        email: result.email,
-        photo: result.photo,
-        role: result.role,
-        ...(result.role === OrganizationMemberRole.EMPLOYEE && {
-          rfid_tag_id: result.rfid_tag_id,
-          positions: result.positions ?? [],
-        }),
-        created_at: result.created_at,
-      }),
-    );
+    return tagAdmin.organization.organization_id;
+  }
+
+  private async validateEmployeeInOrganization(
+    employeeId: number,
+    organizationId: number,
+  ): Promise<void> {
+    const employee = await this.employeeRepository
+      .createQueryBuilder('employee')
+      .innerJoin('employee.organizations', 'organization')
+      .where('employee.employee_id = :employeeId', { employeeId })
+      .andWhere('organization.organization_id = :organizationId', {
+        organizationId,
+      })
+      .getOne();
+
+    if (!employee) {
+      throw new NotFoundException(
+        TAG_ADMIN_CONSTANTS.ERROR_MESSAGES.EMPLOYEE_NOT_FOUND,
+      );
+    }
   }
 
   async deleteProfile(tagAdminId: number): Promise<void> {

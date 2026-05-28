@@ -5,6 +5,7 @@ export const REALTIME_CONSTANTS = {
     SUBSCRIBE: 'subscribe',
     UNSUBSCRIBE: 'unsubscribe',
     NOTIFICATION_RECEIVED: 'notification.received',
+    ORGANIZATION_JOINED: 'organization.joined',
     SUBSCRIBE_BUILDING: 'subscribe_building',
     UNSUBSCRIBE_BUILDING: 'unsubscribe_building',
     SUBSCRIBE_FLOOR: 'subscribe_floor',

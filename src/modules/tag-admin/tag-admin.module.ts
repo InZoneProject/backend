@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { MulterModule } from '@nestjs/platform-express';
 import { TagAdminController } from './tag-admin.controller';
 import { TagAdminService } from './tag-admin.service';
 import { TagAdmin } from './entities/tag-admin.entity';
@@ -7,10 +8,12 @@ import { TagAssignment } from './entities/tag-assignment.entity';
 import { Employee } from '../employees/entities/employee.entity';
 import { RfidTag } from '../rfid/entities/rfid-tag.entity';
 import { SharedModule } from '../../shared/shared.module';
+import { multerConfig } from '../../shared/config/multer.config';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([TagAdmin, TagAssignment, Employee, RfidTag]),
+    MulterModule.register(multerConfig),
     SharedModule,
   ],
   controllers: [TagAdminController],

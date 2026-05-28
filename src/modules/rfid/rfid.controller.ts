@@ -82,7 +82,11 @@ export class RfidController {
     @Body() createRfidTagDto: CreateRfidTagDto,
     @Req() req: RequestWithUser,
   ) {
-    return this.rfidService.createRfidTag(req.user.sub, createRfidTagDto);
+    return this.rfidService.createRfidTag(
+      req.user.sub,
+      req.user.role,
+      createRfidTagDto,
+    );
   }
 
   @Delete('readers/:id')
@@ -102,11 +106,11 @@ export class RfidController {
     @Param('id', ParseIntPipe) tagId: number,
     @Req() req: RequestWithUser,
   ): Promise<void> {
-    await this.rfidService.deleteRfidTag(req.user.sub, tagId);
+    await this.rfidService.deleteRfidTag(req.user.sub, req.user.role, tagId);
   }
 
   @Patch('tags/:id')
-  @Roles(UserRole.ORGANIZATION_ADMIN)
+  @Roles(UserRole.TAG_ADMIN, UserRole.ORGANIZATION_ADMIN)
   async updateRfidTag(
     @Param('id', ParseIntPipe) tagId: number,
     @Body() updateRfidTagDto: UpdateRfidTagDto,
@@ -114,8 +118,55 @@ export class RfidController {
   ) {
     return this.rfidService.updateRfidTag(
       req.user.sub,
+      req.user.role,
       tagId,
       updateRfidTagDto,
+    );
+  }
+
+  @Get('organizations/:organizationId/employees/:employeeId/tag')
+  @Roles(UserRole.TAG_ADMIN, UserRole.ORGANIZATION_ADMIN)
+  async getAssignedTagForEmployee(
+    @Param('organizationId', ParseIntPipe) organizationId: number,
+    @Param('employeeId', ParseIntPipe) employeeId: number,
+    @Req() req: RequestWithUser,
+  ) {
+    return this.rfidService.getAssignedTagForEmployee(
+      req.user.sub,
+      req.user.role,
+      employeeId,
+      organizationId,
+    );
+  }
+
+  @Get('organizations/:organizationId/employees/:employeeId/available-tags')
+  @Roles(UserRole.TAG_ADMIN, UserRole.ORGANIZATION_ADMIN)
+  async getAvailableTagsForEmployee(
+    @Param('organizationId', ParseIntPipe) organizationId: number,
+    @Param('employeeId', ParseIntPipe) employeeId: number,
+    @Req() req: RequestWithUser,
+    @Query(
+      'offset',
+      new DefaultValuePipe(PAGINATION_CONSTANTS.DEFAULT_OFFSET),
+      ParseIntPipe,
+    )
+    offset: number,
+    @Query(
+      'limit',
+      new DefaultValuePipe(PAGINATION_CONSTANTS.DEFAULT_LIMIT),
+      ParseIntPipe,
+    )
+    limit: number,
+    @Query('search') search?: string,
+  ) {
+    return this.rfidService.getAvailableTagsForEmployee(
+      req.user.sub,
+      req.user.role,
+      employeeId,
+      organizationId,
+      offset,
+      limit,
+      search,
     );
   }
 

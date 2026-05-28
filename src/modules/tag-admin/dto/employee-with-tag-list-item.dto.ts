@@ -1,6 +1,4 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { OrganizationMemberRole } from '../../../shared/enums/organization-member-role.enum';
-import { Position } from '../../organizations/entities/position.entity';
 
 export class EmployeeWithTagListItemDto {
   @ApiProperty()
@@ -15,14 +13,11 @@ export class EmployeeWithTagListItemDto {
   @ApiProperty({ nullable: true })
   photo: string | null;
 
-  @ApiProperty({ enum: OrganizationMemberRole })
-  role: OrganizationMemberRole;
+  @ApiProperty({ nullable: true })
+  phone: string | null;
 
-  @ApiProperty({ nullable: true, required: false })
-  rfid_tag_id?: number | null;
-
-  @ApiProperty({ type: [Position], required: false })
-  positions?: Position[];
+  @ApiProperty()
+  has_assigned_tag: boolean;
 
   @ApiProperty()
   created_at: Date;
