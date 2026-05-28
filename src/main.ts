@@ -13,6 +13,8 @@ async function bootstrap() {
     await NestFactory.create<NestExpressApplication>(AppModule);
   const configurationService = application.get(ConfigService);
 
+  application.set('trust proxy', true);
+
   const frontendUrl = configurationService.get<string>('FRONTEND_URL');
 
   application.enableCors({
