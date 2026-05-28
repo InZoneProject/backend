@@ -3,10 +3,10 @@ import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import { NestExpressApplication } from '@nestjs/platform-express';
-import { join } from 'path';
 import { AppModule } from './app.module';
 import { SWAGGER_CONFIG, CORS_CONFIG } from './main.constants';
 import { FILE_VALIDATION_CONSTANTS } from './shared/constants/file-validation.constants';
+import { ensureUploadsFolderExists } from './shared/utils/upload-path.util';
 
 async function bootstrap() {
   const application =
@@ -22,12 +22,9 @@ async function bootstrap() {
     origin: frontendUrl,
   });
 
-  application.useStaticAssets(
-    join(process.cwd(), FILE_VALIDATION_CONSTANTS.UPLOADS_FOLDER_NAME),
-    {
-      prefix: FILE_VALIDATION_CONSTANTS.UPLOADS_URL_PREFIX,
-    },
-  );
+  application.useStaticAssets(ensureUploadsFolderExists(), {
+    prefix: FILE_VALIDATION_CONSTANTS.UPLOADS_URL_PREFIX,
+  });
 
   application.useGlobalPipes(
     new ValidationPipe({
