@@ -1189,6 +1189,12 @@ export class OrganizationsService {
     this.notificationsGateway.emitOrganizationRemovedFromEmployee(employeeId, {
       organization_id: organizationId,
     });
+
+    this.notificationsGateway.emitOrganizationMemberRemovedToAdmin(userId, {
+      organization_id: organizationId,
+      member_id: employeeId,
+      role: OrganizationMemberRole.EMPLOYEE,
+    });
   }
 
   async deleteProfile(organizationAdminId: number): Promise<void> {

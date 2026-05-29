@@ -12,31 +12,12 @@ import { JwtService } from '@nestjs/jwt';
 import { UserRole } from '../auth/enums/user-role.enum';
 import { REALTIME_CONSTANTS } from './realtime.constants';
 import { extractTokenFromHandshake } from '../../shared/utils/socket-token.util';
-
-interface AuthenticatedSocket extends Socket {
-  userId: number;
-  role: UserRole;
-  organizationIds?: number[];
-  isSubscribed: boolean;
-}
-
-interface JwtPayload {
-  sub: number;
-  role: UserRole;
-  organizationIds?: number[];
-}
-
-interface NotificationPayload {
-  notification_id: number;
-  title: string;
-  message: string;
-  is_read: boolean;
-  created_at: Date;
-}
-
-interface OrganizationChangedPayload {
-  organization_id: number;
-}
+import type { AuthenticatedSocket } from './interfaces/authenticated-socket.interface';
+import type { JwtPayload } from './interfaces/jwt-payload.interface';
+import type { NotificationPayload } from './interfaces/notification-payload.interface';
+import type { OrganizationChangedPayload } from './interfaces/organization-changed-payload.interface';
+import type { OrganizationMemberJoinedPayload } from './interfaces/organization-member-joined-payload.interface';
+import type { OrganizationMemberRemovedPayload } from './interfaces/organization-member-removed-payload.interface';
 
 @WebSocketGateway({
   namespace: '/notifications',
@@ -162,6 +143,26 @@ export class NotificationsGateway implements OnGatewayConnection {
     this.server
       .to(roomName)
       .emit(REALTIME_CONSTANTS.EVENTS.ORGANIZATION_REMOVED, payload);
+  }
+
+  emitOrganizationMemberJoinedToAdmin(
+    organizationAdminId: number,
+    payload: OrganizationMemberJoinedPayload,
+  ): void {
+    const roomName = `org-admin-${organizationAdminId}`;
+    this.server
+      .to(roomName)
+      .emit(REALTIME_CONSTANTS.EVENTS.ORGANIZATION_MEMBER_JOINED, payload);
+  }
+
+  emitOrganizationMemberRemovedToAdmin(
+    organizationAdminId: number,
+    payload: OrganizationMemberRemovedPayload,
+  ): void {
+    const roomName = `org-admin-${organizationAdminId}`;
+    this.server
+      .to(roomName)
+      .emit(REALTIME_CONSTANTS.EVENTS.ORGANIZATION_MEMBER_REMOVED, payload);
   }
 
   private getRoomName(client: AuthenticatedSocket): string | null {

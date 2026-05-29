@@ -20,6 +20,8 @@ import { OrganizationMembersService } from '../../shared/services/organization-m
 import { AUTH_CONSTANTS } from '../auth/auth.constants';
 import { EMPLOYEES_CONSTANTS } from './employees.constants';
 import { NotificationsGateway } from '../realtime/notifications.gateway';
+import { Organization } from '../organizations/entities/organization.entity';
+import { OrganizationMemberRole } from '../../shared/enums/organization-member-role.enum';
 
 @Injectable()
 export class EmployeesService {
@@ -28,6 +30,8 @@ export class EmployeesService {
     private readonly employeeRepository: Repository<Employee>,
     @InjectRepository(InviteToken)
     private readonly inviteTokenRepository: Repository<InviteToken>,
+    @InjectRepository(Organization)
+    private readonly organizationRepository: Repository<Organization>,
     private readonly inviteTokenService: InviteTokenService,
     private readonly fileValidator: FileValidator,
     private readonly fileService: FileService,
@@ -95,6 +99,31 @@ export class EmployeesService {
     this.notificationsGateway.emitOrganizationJoinedToEmployee(employeeId, {
       organization_id: inviteToken.organization.organization_id,
     });
+
+    const organization = await this.organizationRepository.findOne({
+      where: {
+        organization_id: inviteToken.organization.organization_id,
+      },
+      relations: ['organization_admin'],
+    });
+
+    if (organization?.organization_admin) {
+      this.notificationsGateway.emitOrganizationMemberJoinedToAdmin(
+        organization.organization_admin.organization_admin_id,
+        {
+          organization_id: organization.organization_id,
+          member: {
+            id: employee.employee_id,
+            full_name: employee.full_name,
+            email: employee.email,
+            phone: employee.phone,
+            photo: employee.photo,
+            role: OrganizationMemberRole.EMPLOYEE,
+            created_at: employee.created_at,
+          },
+        },
+      );
+    }
 
     return {
       organization_id: inviteToken.organization.organization_id,

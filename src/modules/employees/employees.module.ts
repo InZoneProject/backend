@@ -5,6 +5,7 @@ import { MulterModule } from '@nestjs/platform-express';
 import { Employee } from './entities/employee.entity';
 import { InviteToken } from '../global-admin/entities/invite-token.entity';
 import { Position } from '../organizations/entities/position.entity';
+import { Organization } from '../organizations/entities/organization.entity';
 import { EmployeesService } from './employees.service';
 import { EmployeesController } from './employees.controller';
 import { SharedModule } from '../../shared/shared.module';
@@ -13,7 +14,7 @@ import { RealtimeModule } from '../realtime/realtime.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Employee, InviteToken, Position]),
+    TypeOrmModule.forFeature([Employee, InviteToken, Position, Organization]),
     JwtModule.register({}),
     MulterModule.register(multerConfig),
     SharedModule,
