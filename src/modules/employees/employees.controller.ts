@@ -157,27 +157,4 @@ export class EmployeesController {
   ): Promise<void> {
     await this.employeesService.leaveOrganization(req.user.sub, organizationId);
   }
-
-  @Get('organization/:id/members')
-  @UseGuards(JwtAuthGuard, RolesGuard, EmailVerificationGuard)
-  @Roles(UserRole.EMPLOYEE)
-  @ApiBearerAuth('JWT-auth')
-  @ApiQuery({ name: 'search', required: false })
-  @ApiQuery({ name: 'offset', required: false })
-  @ApiQuery({ name: 'limit', required: false })
-  async getOrganizationMembers(
-    @Param('id', ParseIntPipe) organizationId: number,
-    @Req() req: RequestWithUser,
-    @Query('search') search?: string,
-    @Query('offset', new DefaultValuePipe(0), ParseIntPipe) offset?: number,
-    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit?: number,
-  ) {
-    return this.employeesService.getOrganizationMembers(
-      req.user.sub,
-      organizationId,
-      search,
-      offset,
-      limit,
-    );
-  }
 }

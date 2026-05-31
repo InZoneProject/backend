@@ -34,6 +34,7 @@ import { EmailVerificationGuard } from '../auth/guards/email-verification.guard'
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '../auth/enums/user-role.enum';
 import type { RequestWithUser } from '../auth/types/request-with-user.types';
+import { mapPhotoToAbsoluteUrl } from '../../shared/utils/photo-url.util';
 
 @ApiTags('Tag Admin')
 @Controller('tag-admin')
@@ -43,19 +44,6 @@ import type { RequestWithUser } from '../auth/types/request-with-user.types';
 export class TagAdminController {
   constructor(private readonly tagAdminService: TagAdminService) {}
 
-  private getRequestOrigin(req: RequestWithUser): string {
-    const forwardedProtocol = req.headers['x-forwarded-proto'];
-    const forwardedHost = req.headers['x-forwarded-host'];
-    const protocol = Array.isArray(forwardedProtocol)
-      ? forwardedProtocol[0]
-      : forwardedProtocol || req.protocol;
-    const host = Array.isArray(forwardedHost)
-      ? forwardedHost[0]
-      : forwardedHost || req.get('host');
-
-    return `${protocol}://${host}`;
-  }
-
   @Patch('profile/photo')
   @ApiConsumes('multipart/form-data')
   @ApiBody({ type: UpdateProfilePhotoDto })
@@ -64,11 +52,14 @@ export class TagAdminController {
     @UploadedFile() photo: Express.Multer.File,
     @Req() req: RequestWithUser,
   ) {
-    return this.tagAdminService.updateProfilePhoto(
+    const response = await this.tagAdminService.updateProfilePhoto(
       req.user.sub,
       photo,
-      this.getRequestOrigin(req),
     );
+
+    return {
+      photo: mapPhotoToAbsoluteUrl(response.photo, req),
+    };
   }
 
   @Patch('profile/info')
@@ -81,10 +72,12 @@ export class TagAdminController {
 
   @Get('profile')
   async getProfile(@Req() req: RequestWithUser) {
-    return this.tagAdminService.getProfile(
-      req.user.sub,
-      this.getRequestOrigin(req),
-    );
+    const response = await this.tagAdminService.getProfile(req.user.sub);
+
+    return {
+      ...response,
+      photo: mapPhotoToAbsoluteUrl(response.photo, req),
+    };
   }
 
   @Get('organization')
@@ -127,13 +120,20 @@ export class TagAdminController {
     @Query('offset', new DefaultValuePipe(0), ParseIntPipe) offset?: number,
     @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit?: number,
   ) {
-    return this.tagAdminService.getEmployeesWithTags(
+    const response = await this.tagAdminService.getEmployeesWithTags(
       req.user.sub,
       search,
       offset,
       limit,
-      this.getRequestOrigin(req),
     );
+
+    return {
+      ...response,
+      items: response.items.map((employee) => ({
+        ...employee,
+        photo: mapPhotoToAbsoluteUrl(employee.photo, req),
+      })),
+    };
   }
 
   @Get('employees/:employeeId/tag')

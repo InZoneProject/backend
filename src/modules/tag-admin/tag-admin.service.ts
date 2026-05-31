@@ -15,10 +15,8 @@ import { EmployeeWithTagListItemDto } from './dto/employee-with-tag-list-item.dt
 import { UpdateProfileInfoDto } from '../../shared/dto/update-profile-info.dto';
 import { UpdateProfilePhotoResponseDto } from '../../shared/dto/update-profile-photo-response.dto';
 import { UpdateProfileInfoResponseDto } from '../../shared/dto/update-profile-info-response.dto';
-import { basename } from 'path';
 import { FileValidator } from '../../shared/validators/file.validator';
 import { FileService } from '../../shared/services/file.service';
-import { FILE_VALIDATION_CONSTANTS } from '../../shared/constants/file-validation.constants';
 import { TAG_ADMIN_CONSTANTS } from './tag-admin.constants';
 
 @Injectable()
@@ -37,36 +35,9 @@ export class TagAdminService {
     private readonly dataSource: DataSource,
   ) {}
 
-  private mapProfilePhotoToPublicUrl(
-    photoPath: string | null,
-    requestOrigin?: string,
-  ): string | null {
-    if (!photoPath) return null;
-    if (photoPath.startsWith('http://') || photoPath.startsWith('https://')) {
-      return photoPath;
-    }
-
-    const uploadsPrefix = FILE_VALIDATION_CONSTANTS.UPLOADS_URL_PREFIX.replace(
-      /\/$/,
-      '',
-    );
-    const normalizedPath = photoPath.replace(/\\/g, '/');
-    const uploadsIndex = normalizedPath.lastIndexOf('/uploads/');
-
-    const publicPath =
-      uploadsIndex >= 0
-        ? normalizedPath.slice(uploadsIndex)
-        : `${uploadsPrefix}/${basename(normalizedPath)}`;
-
-    return requestOrigin
-      ? `${requestOrigin.replace(/\/$/, '')}${publicPath}`
-      : publicPath;
-  }
-
   async updateProfilePhoto(
     tagAdminId: number,
     photo: Express.Multer.File,
-    requestOrigin?: string,
   ): Promise<UpdateProfilePhotoResponseDto> {
     this.fileValidator.validateImageFile(photo);
 
@@ -88,7 +59,7 @@ export class TagAdminService {
     await this.tagAdminRepository.save(tagAdmin);
 
     return {
-      photo: this.mapProfilePhotoToPublicUrl(tagAdmin.photo, requestOrigin)!,
+      photo: tagAdmin.photo,
     };
   }
 
@@ -119,7 +90,7 @@ export class TagAdminService {
     };
   }
 
-  async getProfile(tagAdminId: number, requestOrigin?: string) {
+  async getProfile(tagAdminId: number) {
     const tagAdmin = await this.tagAdminRepository.findOne({
       where: { tag_admin_id: tagAdminId },
       relations: ['organization'],
@@ -137,7 +108,7 @@ export class TagAdminService {
       full_name: tagAdmin.full_name,
       email: tagAdmin.email,
       phone: tagAdmin.phone,
-      photo: this.mapProfilePhotoToPublicUrl(tagAdmin.photo, requestOrigin),
+      photo: tagAdmin.photo,
     };
   }
 
@@ -339,7 +310,6 @@ export class TagAdminService {
     search?: string,
     offset: number = 0,
     limit: number = 20,
-    requestOrigin?: string,
   ): Promise<{
     items: EmployeeWithTagListItemDto[];
     total: number;
@@ -423,7 +393,7 @@ export class TagAdminService {
           id: result.id,
           full_name: result.full_name,
           email: result.email,
-          photo: this.mapProfilePhotoToPublicUrl(result.photo, requestOrigin),
+          photo: result.photo,
           phone: result.phone,
           has_assigned_tag: Boolean(result.has_assigned_tag),
           created_at: result.created_at,

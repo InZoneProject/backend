@@ -396,7 +396,7 @@ export class OrganizationsController {
   }
 
   @Get(':id/members')
-  @Roles(UserRole.ORGANIZATION_ADMIN, UserRole.TAG_ADMIN)
+  @Roles(UserRole.ORGANIZATION_ADMIN, UserRole.TAG_ADMIN, UserRole.EMPLOYEE)
   @ApiQuery({ name: 'search', required: false })
   @ApiQuery({ name: 'offset', required: false })
   @ApiQuery({ name: 'limit', required: false })

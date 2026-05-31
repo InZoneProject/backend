@@ -16,7 +16,6 @@ import { UpdateProfilePhotoResponseDto } from '../../shared/dto/update-profile-p
 import { UpdateProfileInfoResponseDto } from '../../shared/dto/update-profile-info-response.dto';
 import { FileValidator } from '../../shared/validators/file.validator';
 import { FileService } from '../../shared/services/file.service';
-import { OrganizationMembersService } from '../../shared/services/organization-members.service';
 import { AUTH_CONSTANTS } from '../auth/auth.constants';
 import { EMPLOYEES_CONSTANTS } from './employees.constants';
 import { NotificationsGateway } from '../realtime/notifications.gateway';
@@ -35,7 +34,6 @@ export class EmployeesService {
     private readonly inviteTokenService: InviteTokenService,
     private readonly fileValidator: FileValidator,
     private readonly fileService: FileService,
-    private readonly organizationMembersService: OrganizationMembersService,
     private readonly notificationsGateway: NotificationsGateway,
   ) {}
 
@@ -256,109 +254,6 @@ export class EmployeesService {
     };
   }
 
-  async getOrganizationMembers(
-    employeeId: number,
-    organizationId: number,
-    search?: string,
-    offset: number = 0,
-    limit: number = 20,
-  ) {
-    const employeeOrgCheck = await this.employeeRepository
-      .createQueryBuilder('employee')
-      .leftJoin('employee.organizations', 'org')
-      .where('employee.employee_id = :employeeId', { employeeId })
-      .andWhere('org.organization_id = :organizationId', { organizationId })
-      .getOne();
-
-    if (!employeeOrgCheck) {
-      throw new NotFoundException(
-        EMPLOYEES_CONSTANTS.ERROR_MESSAGES.EMPLOYEE_NOT_IN_ORGANIZATION,
-      );
-    }
-
-    const dataSource = this.employeeRepository.manager.connection;
-
-    const orgAdmins = dataSource
-      .createQueryBuilder()
-      .from('organization_admin', 'org_admin')
-      .leftJoin(
-        'organization',
-        'org',
-        'org.organization_admin_id = org_admin.organization_admin_id',
-      )
-      .where('org.organization_id = :organizationId', {
-        organizationId,
-      })
-      .andWhere(
-        search ? 'org_admin.full_name ILIKE :search' : '1=1',
-        search ? { search: `%${search}%` } : {},
-      )
-      .select('org_admin.organization_admin_id', 'id')
-      .addSelect('org_admin.full_name', 'full_name')
-      .addSelect('org_admin.email', 'email')
-      .addSelect('org_admin.photo', 'photo')
-      .addSelect("'organization_admin'", 'role')
-      .addSelect('org_admin.created_at', 'created_at')
-      .addSelect('1', 'sort_order')
-      .addSelect('ARRAY[]::integer[]', 'position_ids');
-
-    const tagAdmins = dataSource
-      .createQueryBuilder()
-      .from('tag_admin', 'tag_admin')
-      .where('tag_admin.organization_id = :organizationId', { organizationId })
-      .andWhere(
-        search ? 'tag_admin.full_name ILIKE :search' : '1=1',
-        search ? { search: `%${search}%` } : {},
-      )
-      .select('tag_admin.tag_admin_id', 'id')
-      .addSelect('tag_admin.full_name', 'full_name')
-      .addSelect('tag_admin.email', 'email')
-      .addSelect('tag_admin.photo', 'photo')
-      .addSelect("'tag_admin'", 'role')
-      .addSelect('tag_admin.created_at', 'created_at')
-      .addSelect('2', 'sort_order')
-      .addSelect('ARRAY[]::integer[]', 'position_ids');
-
-    const employees = dataSource
-      .createQueryBuilder()
-      .from('employee', 'employee')
-      .leftJoin(
-        'employee_organizations_organization',
-        'emp_org',
-        'emp_org.employeeEmployeeId = employee.employee_id',
-      )
-      .leftJoin(
-        'employee_positions_position',
-        'emp_pos',
-        'emp_pos.employeeEmployeeId = employee.employee_id',
-      )
-      .where('emp_org.organizationOrganizationId = :organizationId', {
-        organizationId,
-      })
-      .andWhere(
-        search ? 'employee.full_name ILIKE :search' : '1=1',
-        search ? { search: `%${search}%` } : {},
-      )
-      .select('employee.employee_id', 'id')
-      .addSelect('employee.full_name', 'full_name')
-      .addSelect('employee.email', 'email')
-      .addSelect('employee.photo', 'photo')
-      .addSelect("'employee'", 'role')
-      .addSelect('employee.created_at', 'created_at')
-      .addSelect('3', 'sort_order')
-      .addSelect(
-        'ARRAY_AGG(DISTINCT emp_pos.positionPositionId)',
-        'position_ids',
-      )
-      .groupBy('employee.employee_id');
-
-    return this.organizationMembersService.buildMembersResponse(
-      [orgAdmins, tagAdmins, employees],
-      offset,
-      limit,
-    );
-  }
-
   async deleteProfile(employeeId: number): Promise<void> {
     const employee = await this.employeeRepository.findOne({
       where: { employee_id: employeeId },
@@ -403,5 +298,25 @@ export class EmployeesService {
     );
 
     await this.employeeRepository.save(employee);
+
+    this.notificationsGateway.emitOrganizationRemovedFromEmployee(employeeId, {
+      organization_id: organizationId,
+    });
+
+    const organization = await this.organizationRepository.findOne({
+      where: { organization_id: organizationId },
+      relations: ['organization_admin'],
+    });
+
+    if (organization?.organization_admin) {
+      this.notificationsGateway.emitOrganizationMemberRemovedToAdmin(
+        organization.organization_admin.organization_admin_id,
+        {
+          organization_id: organizationId,
+          member_id: employeeId,
+          role: OrganizationMemberRole.EMPLOYEE,
+        },
+      );
+    }
   }
 }
